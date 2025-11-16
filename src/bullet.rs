@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::area::*;
-use crate::common::{self, Direction, *};
+use crate::common::{Direction, *};
 use crate::enemy::Enemy;
 use crate::level::LevelItem;
 use crate::player::{PlayerLives, PlayerNo, Shield};
@@ -37,17 +37,19 @@ pub struct ExplosionAssets {
 }
 
 pub fn setup_explosion_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let mut big_explosion: Vec<Handle<Image>> = Vec::new();
-    big_explosion.push(asset_server.load("textures/big_explosion_1.png"));
-    big_explosion.push(asset_server.load("textures/big_explosion_2.png"));
-    big_explosion.push(asset_server.load("textures/big_explosion_3.png"));
-    big_explosion.push(asset_server.load("textures/big_explosion_4.png"));
-    big_explosion.push(asset_server.load("textures/big_explosion_5.png"));
+    let big_explosion: Vec<Handle<Image>> = vec![
+        asset_server.load("textures/big_explosion_1.png"),
+        asset_server.load("textures/big_explosion_2.png"),
+        asset_server.load("textures/big_explosion_3.png"),
+        asset_server.load("textures/big_explosion_4.png"),
+        asset_server.load("textures/big_explosion_5.png"),
+    ];
 
-    let mut bullet_explosion: Vec<Handle<Image>> = Vec::new();
-    bullet_explosion.push(asset_server.load("textures/bullet_explosion_1.png"));
-    bullet_explosion.push(asset_server.load("textures/bullet_explosion_2.png"));
-    bullet_explosion.push(asset_server.load("textures/bullet_explosion_3.png"));
+    let bullet_explosion: Vec<Handle<Image>> = vec![
+        asset_server.load("textures/bullet_explosion_1.png"),
+        asset_server.load("textures/bullet_explosion_2.png"),
+        asset_server.load("textures/bullet_explosion_3.png"),
+    ];
 
     commands.insert_resource(ExplosionAssets {
         big_explosion,
@@ -57,23 +59,15 @@ pub fn setup_explosion_assets(mut commands: Commands, asset_server: Res<AssetSer
 
 // 炮弹移动
 pub fn move_bullet(
-    mut q_bullet: Query<(&mut Transform, &common::Direction), With<Bullet>>,
+    mut q_bullet: Query<(&mut Transform, &Direction), With<Bullet>>,
     time: Res<Time>,
 ) {
     for (mut bullet_transform, direction) in &mut q_bullet {
         match direction {
-            common::Direction::Left => {
-                bullet_transform.translation.x -= BULLET_SPEED * time.delta_secs()
-            }
-            common::Direction::Right => {
-                bullet_transform.translation.x += BULLET_SPEED * time.delta_secs()
-            }
-            common::Direction::Up => {
-                bullet_transform.translation.y += BULLET_SPEED * time.delta_secs()
-            }
-            common::Direction::Down => {
-                bullet_transform.translation.y -= BULLET_SPEED * time.delta_secs()
-            }
+            Direction::Left => bullet_transform.translation.x -= BULLET_SPEED * time.delta_secs(),
+            Direction::Right => bullet_transform.translation.x += BULLET_SPEED * time.delta_secs(),
+            Direction::Up => bullet_transform.translation.y += BULLET_SPEED * time.delta_secs(),
+            Direction::Down => bullet_transform.translation.y -= BULLET_SPEED * time.delta_secs(),
         }
     }
 }
@@ -261,10 +255,10 @@ pub fn spawn_bullet(
             image: bullet_texture_handle.clone(),
             texture_atlas: Some(TextureAtlas {
                 index: match direction {
-                    common::Direction::Up => 0,
-                    common::Direction::Right => 1,
-                    common::Direction::Down => 2,
-                    common::Direction::Left => 3,
+                    Direction::Up => 0,
+                    Direction::Right => 1,
+                    Direction::Down => 2,
+                    Direction::Left => 3,
                 },
                 layout: atlas_layouts.add(bullet_texture_layout),
             }),
