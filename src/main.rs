@@ -76,92 +76,113 @@ fn main() {
             ),
         )
         .add_systems(
-            Update,
-            (start_game, switch_multiplayer_mode).run_if(in_state(AppState::StartMenu)),
-        )
-        .add_systems(
             OnExit(AppState::StartMenu),
             (despawn_screen::<OnStartMenuScreen>,),
         )
         .add_systems(OnEnter(AppState::Playing), (setup_levels,))
+        // Input handling
         .add_systems(
             Update,
-            (spawn_ldtk_entity, auto_spawn_players).run_if(in_state(AppState::Playing)),
+            (start_game, switch_multiplayer_mode)
+                .in_set(GameplaySet::Input)
+                .run_if(in_state(AppState::StartMenu)),
         )
         .add_systems(
             Update,
-            (players_move, players_attack).run_if(in_state(AppState::Playing)),
-        )
-        .add_systems(
-            Update,
-            (animate_players, animate_shield).run_if(in_state(AppState::Playing)),
-        )
-        .add_systems(
-            Update,
-            (spawn_ldtk_entity, auto_spawn_players).run_if(in_state(AppState::Playing)),
-        )
-        .add_systems(
-            Update,
-            (players_move, players_attack).run_if(in_state(AppState::Playing)),
-        )
-        .add_systems(
-            Update,
-            (animate_players, animate_shield).run_if(in_state(AppState::Playing)),
-        )
-        .add_systems(Update, animate_born)
-        .add_systems(Update, spawn_explosion)
-        .add_systems(Update, handle_bullet_collision)
-        .add_systems(
-            Update,
-            (
-                remove_shield,
-                animate_water,
-                animate_home,
-                animate_explosion,
-            )
+            pause_game
+                .in_set(GameplaySet::Ui)
                 .run_if(in_state(AppState::Playing)),
         )
         .add_systems(
             Update,
-            (auto_switch_level, auto_spawn_enemies).run_if(in_state(AppState::Playing)),
+            unpause_game
+                .in_set(GameplaySet::Ui)
+                .run_if(in_state(AppState::Paused)),
         )
+        // Spawning entities
         .add_systems(
             Update,
-            (animate_enemies, enemies_attack).run_if(in_state(AppState::Playing)),
+            (spawn_ldtk_entity, auto_spawn_players, auto_spawn_enemies)
+                .in_set(GameplaySet::Spawning)
+                .run_if(in_state(AppState::Playing)),
         )
+        // Movement systems
         .add_systems(
             Update,
-            (enemies_move, handle_enemy_collision).run_if(in_state(AppState::Playing)),
+            (players_move, enemies_move)
+                .in_set(GameplaySet::Movement)
+                .after(GameplaySet::Spawning)
+                .run_if(in_state(AppState::Playing)),
         )
+        // Combat systems (shooting)
         .add_systems(
             Update,
-            (move_bullet, pause_game).run_if(in_state(AppState::Playing)),
+            (players_attack, enemies_attack)
+                .in_set(GameplaySet::Combat)
+                .after(GameplaySet::Movement)
+                .run_if(in_state(AppState::Playing)),
         )
+        // Bullet movement
         .add_systems(
             Update,
-            (auto_spawn_enemies, animate_enemies).run_if(in_state(AppState::Playing)),
+            move_bullet
+                .in_set(GameplaySet::BulletMovement)
+                .after(GameplaySet::Combat)
+                .run_if(in_state(AppState::Playing)),
         )
+        // Collision handling
         .add_systems(
             Update,
-            (enemies_attack, enemies_move).run_if(in_state(AppState::Playing)),
+            (handle_bullet_collision, handle_enemy_collision)
+                .in_set(GameplaySet::Collision)
+                .after(GameplaySet::BulletMovement)
+                .run_if(in_state(AppState::Playing)),
         )
+        // Post-collision effects
         .add_systems(
             Update,
-            (handle_enemy_collision, move_bullet, pause_game).run_if(in_state(AppState::Playing)),
+            (spawn_explosion, animate_born)
+                .in_set(GameplaySet::Effects)
+                .after(GameplaySet::Collision)
+                .run_if(in_state(AppState::Playing)),
         )
-        .add_systems(Update, (unpause_game,).run_if(in_state(AppState::Paused)))
+        // Animations
+        .add_systems(
+            Update,
+            (
+                animate_players,
+                animate_enemies,
+                animate_shield,
+                animate_water,
+                animate_home,
+                animate_explosion,
+                remove_shield,
+            )
+                .in_set(GameplaySet::Animation)
+                .after(GameplaySet::Effects)
+                .run_if(in_state(AppState::Playing)),
+        )
+        // Level management
+        .add_systems(
+            Update,
+            auto_switch_level
+                .in_set(GameplaySet::LevelManagement)
+                .after(GameplaySet::Collision)
+                .run_if(in_state(AppState::Playing)),
+        )
         .add_systems(OnEnter(AppState::GameOver), (setup_game_over,))
         .add_systems(
             Update,
             (
                 animate_game_over,
                 animate_players,
+                animate_enemies,
                 animate_shield,
                 animate_water,
                 animate_home,
                 animate_explosion,
-                animate_enemies,
             )
+                .in_set(GameplaySet::Animation)
                 .run_if(in_state(AppState::GameOver)),
         )
         .add_systems(
@@ -172,7 +193,7 @@ fn main() {
 }
 
 fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d::default());
+    commands.spawn(Camera2d);
 }
 
 fn setup_rapier(mut rapier_config: Single<&mut RapierConfiguration>) {

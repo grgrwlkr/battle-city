@@ -89,3 +89,28 @@ pub fn setup_game_sounds(mut commands: Commands, asset_server: Res<AssetServer>)
 // Resource to deduplicate despawn requests within a frame.
 #[derive(Default, Resource)]
 pub struct ScheduledDespawn(pub HashSet<Entity>);
+
+/// System sets for organizing gameplay systems execution order
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub enum GameplaySet {
+    /// Input handling (keyboard, gamepad, etc.)
+    Input,
+    /// Entity spawning (players, enemies, entities from LDTK)
+    Spawning,
+    /// Entity movement and AI
+    Movement,
+    /// Combat actions (shooting, attacks)
+    Combat,
+    /// Bullet movement
+    BulletMovement,
+    /// Collision detection and handling
+    Collision,
+    /// Post-collision effects (explosions, spawning after events)
+    Effects,
+    /// Animations
+    Animation,
+    /// Level management (switching levels, cleanup)
+    LevelManagement,
+    /// UI and game state updates (pause, game over)
+    Ui,
+}
