@@ -74,6 +74,7 @@ pub struct IronWallBundle {
     #[sprite_sheet("textures/map.bmp", 32, 32, 7, 1, 0, 0, 1)]
     sprite_sheet: Sprite,
 }
+#[allow(dead_code)]
 #[derive(Bundle, LdtkEntity, Default)]
 pub struct TreeBundle {
     #[from_entity_instance]
@@ -228,6 +229,7 @@ pub fn animate_water(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn auto_switch_level(
     mut commands: Commands,
     q_enemies: Query<(), With<Enemy>>,
@@ -236,6 +238,7 @@ pub fn auto_switch_level(
     mut level_selection: ResMut<LevelSelection>,
     mut level_spawned_enemies: ResMut<LevelSpawnedEnemies>,
     mut app_state: ResMut<NextState<AppState>>,
+    mut scheduled: ResMut<crate::common::ScheduledDespawn>,
 ) {
     // 已生成的敌人数量达到最大值 并且 敌人全部阵亡，切换到下一关卡
     if level_spawned_enemies.0 == ENEMIES_PER_LEVEL && q_enemies.iter().len() == 0 {
@@ -252,18 +255,24 @@ pub fn auto_switch_level(
 
                 // 重新生成玩家
                 for player in &q_players {
-                    commands.entity(player).despawn_recursive();
+                    if scheduled.0.insert(player) {
+                        commands.entity(player).despawn();
+                    }
                 }
                 for level_item in &q_level_items {
-                    commands.entity(level_item).despawn_recursive();
+                    if scheduled.0.insert(level_item) {
+                        commands.entity(level_item).despawn();
+                    }
                 }
             }
         }
     }
+        // Placeholder for patch format
+        // No operation changes
 }
 
 pub fn animate_home(
-    mut home_dying_er: EventReader<HomeDyingEvent>,
+    mut home_dying_er: MessageReader<HomeDyingEvent>,
     mut q_level_items: Query<(&LevelItem, &mut Sprite)>,
     mut app_state: ResMut<NextState<AppState>>,
 ) {
@@ -277,18 +286,27 @@ pub fn animate_home(
     }
 }
 
-pub fn cleanup_level_items(mut commands: Commands, q_level_items: Query<Entity, With<LevelItem>>) {
+pub fn cleanup_level_items(
+    mut commands: Commands,
+    q_level_items: Query<Entity, With<LevelItem>>,
+    mut scheduled: ResMut<crate::common::ScheduledDespawn>,
+) {
     for entity in &q_level_items {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
 pub fn cleanup_ldtk_world(
     mut commands: Commands,
     q_ldtk_world: Query<Entity, With<LdtkProjectHandle>>,
+    mut scheduled: ResMut<crate::common::ScheduledDespawn>,
 ) {
     for entity in &q_ldtk_world {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 

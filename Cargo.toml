@@ -4,12 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy_rapier2d = "0.28"
-bevy_ecs_ldtk = "0.11"
+bevy_rapier2d = { git = "https://github.com/lukasfri/bevy_rapier", rev = "a5c82f08c86f9fd44430081e7d6ea1a5bb296e8b" }
+bevy_ecs_ldtk = "0.13"
 rand = "0.8.5"
 
 [dependencies.bevy]
-version = "0.15"
-features = [
-    "bmp",
-]
+version = "0.17"
+features = ["bmp"]

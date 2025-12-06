@@ -28,9 +28,10 @@ fn main() {
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         // .add_plugin(RapierDebugRenderPlugin::default())
         .add_plugins(LdtkPlugin)
-        .add_event::<ExplosionEvent>()
-        .add_event::<SpawnPlayerEvent>()
-        .add_event::<HomeDyingEvent>()
+        .add_message::<ExplosionEvent>()
+        .add_message::<SpawnPlayerEvent>()
+        .add_message::<HomeDyingEvent>()
+        .add_message::<CollisionEvent>()
         .init_state::<AppState>()
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(MultiplayerMode::SinglePlayer)
@@ -85,32 +86,68 @@ fn main() {
         .add_systems(OnEnter(AppState::Playing), (setup_levels,))
         .add_systems(
             Update,
+            (spawn_ldtk_entity, auto_spawn_players).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (players_move, players_attack).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (animate_players, animate_shield).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (spawn_ldtk_entity, auto_spawn_players).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (players_move, players_attack).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (animate_players, animate_shield).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(Update, animate_born)
+        .add_systems(Update, spawn_explosion)
+        .add_systems(Update, handle_bullet_collision)
+        .add_systems(
+            Update,
             (
-                spawn_ldtk_entity,
-                auto_spawn_players,
-                players_move,
-                players_attack,
-                animate_players,
-                animate_shield,
-                animate_born,
                 remove_shield,
                 animate_water,
                 animate_home,
-                spawn_explosion,
                 animate_explosion,
-                handle_bullet_collision,
-                auto_switch_level,
-                (
-                    auto_spawn_enemies,
-                    animate_enemies,
-                    enemies_attack,
-                    enemies_move,
-                    handle_enemy_collision,
-                    move_bullet,
-                    pause_game,
-                ),
             )
                 .run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (auto_switch_level, auto_spawn_enemies).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (animate_enemies, enemies_attack).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (enemies_move, handle_enemy_collision).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (move_bullet, pause_game).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (auto_spawn_enemies, animate_enemies).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (enemies_attack, enemies_move).run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            (handle_enemy_collision, move_bullet, pause_game).run_if(in_state(AppState::Playing)),
         )
         .add_systems(Update, (unpause_game,).run_if(in_state(AppState::Paused)))
         .add_systems(OnEnter(AppState::GameOver), (setup_game_over,))

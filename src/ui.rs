@@ -33,7 +33,7 @@ pub fn setup_start_menu(
         ))
         .with_children(|parent| {
             parent.spawn(ImageNode {
-                image: asset_server.load("textures/title.bmp").into(),
+                image: asset_server.load("textures/title.bmp"),
                 ..default()
             });
             parent.spawn((
@@ -148,16 +148,14 @@ pub fn pause_game(
 ) {
     // 增加冷启动防止 pause_game 和 unpause_game 都会收到input，导致Paued<->Playing不断循环
     *cold_start += time.delta();
-    if cold_start.as_millis() > 100 {
-        if keyboard_input.just_released(KeyCode::Escape) {
-            info!("Pause game");
-            commands.spawn((
-                AudioPlayer(game_sounds.game_pause.clone()),
-                PlaybackSettings::DESPAWN,
-            ));
-            app_state.set(AppState::Paused);
-            *cold_start = Duration::ZERO;
-        }
+    if cold_start.as_millis() > 100 && keyboard_input.just_released(KeyCode::Escape) {
+        info!("Pause game");
+        commands.spawn((
+            AudioPlayer(game_sounds.game_pause.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
+        app_state.set(AppState::Paused);
+        *cold_start = Duration::ZERO;
     }
 }
 
@@ -168,18 +166,22 @@ pub fn unpause_game(
     time: Res<Time>,
 ) {
     *cold_start += time.delta();
-    if cold_start.as_millis() > 100 {
-        if keyboard_input.just_released(KeyCode::Escape) {
-            info!("Unpause game");
-            app_state.set(AppState::Playing);
-            *cold_start = Duration::ZERO;
-        }
+    if cold_start.as_millis() > 100 && keyboard_input.just_released(KeyCode::Escape) {
+        info!("Unpause game");
+        app_state.set(AppState::Playing);
+        *cold_start = Duration::ZERO;
     }
 }
 
-pub fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
+pub fn despawn_screen<T: Component>(
+    to_despawn: Query<Entity, With<T>>,
+    mut commands: Commands,
+    mut scheduled: ResMut<crate::common::ScheduledDespawn>,
+) {
     for entity in &to_despawn {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 

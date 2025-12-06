@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use std::collections::HashSet;
 
 // 关卡地图行数和列数
 pub const LEVEL_ROWS: i32 = 18;
@@ -61,7 +62,7 @@ pub struct AnimationIndices {
 #[derive(Component, Deref, DerefMut)]
 pub struct TankRefreshBulletTimer(pub Timer);
 
-#[derive(Default, Event)]
+#[derive(Default, Message)]
 pub struct HomeDyingEvent;
 
 #[derive(Debug, Resource)]
@@ -84,3 +85,7 @@ pub fn setup_game_sounds(mut commands: Commands, asset_server: Res<AssetServer>)
         game_pause: asset_server.load("sounds/game_pause.ogg"),
     });
 }
+
+// Resource to deduplicate despawn requests within a frame.
+#[derive(Default, Resource)]
+pub struct ScheduledDespawn(pub HashSet<Entity>);

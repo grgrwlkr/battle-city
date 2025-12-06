@@ -18,7 +18,7 @@ pub enum Bullet {
 #[derive(Debug, Component)]
 pub struct Explosion;
 
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub struct ExplosionEvent {
     pos: Vec3,
     explosion_type: ExplosionType,
@@ -72,6 +72,7 @@ pub fn move_bullet(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_bullet_collision(
     mut commands: Commands,
     q_bullets: Query<(Entity, &Bullet, &Transform)>,
@@ -80,12 +81,13 @@ pub fn handle_bullet_collision(
     q_players: Query<(&Transform, &Children), With<PlayerNo>>,
     q_shields: Query<Entity, With<Shield>>,
     q_enemies: Query<&Transform, With<Enemy>>,
-    mut collision_er: EventReader<CollisionEvent>,
-    mut explosion_ew: EventWriter<ExplosionEvent>,
-    mut home_dying_ew: EventWriter<HomeDyingEvent>,
+    mut collision_er: MessageReader<CollisionEvent>,
+    mut explosion_ew: MessageWriter<ExplosionEvent>,
+    mut home_dying_ew: MessageWriter<HomeDyingEvent>,
     player_lives: Res<PlayerLives>,
     multiplayer_mode: Res<MultiplayerMode>,
     mut app_state: ResMut<NextState<AppState>>,
+    mut scheduled: ResMut<ScheduledDespawn>,
 ) {
     for event in collision_er.read() {
         match event {
@@ -124,8 +126,10 @@ pub fn handle_bullet_collision(
                         LevelItem::Home => {
                             // Game Over
                             println!("Game over");
-                            commands.entity(bullet_entity).despawn();
-                            explosion_ew.send(ExplosionEvent {
+                            if scheduled.0.insert(bullet_entity) {
+                                commands.entity(bullet_entity).despawn();
+                            }
+                            explosion_ew.write(ExplosionEvent {
                                 pos: Vec3::new(
                                     level_item_transform.translation().x,
                                     level_item_transform.translation().y,
@@ -133,12 +137,16 @@ pub fn handle_bullet_collision(
                                 ),
                                 explosion_type: ExplosionType::BigExplosion,
                             });
-                            home_dying_ew.send_default();
+                            home_dying_ew.write_default();
                         }
                         LevelItem::StoneWall => {
-                            commands.entity(bullet_entity).despawn();
-                            commands.entity(other_entity).despawn();
-                            explosion_ew.send(ExplosionEvent {
+                            if scheduled.0.insert(bullet_entity) {
+                                commands.entity(bullet_entity).despawn();
+                            }
+                            if scheduled.0.insert(other_entity) {
+                                commands.entity(other_entity).despawn();
+                            }
+                            explosion_ew.write(ExplosionEvent {
                                 pos: Vec3::new(
                                     bullet_transform.translation.x,
                                     bullet_transform.translation.y,
@@ -148,8 +156,10 @@ pub fn handle_bullet_collision(
                             });
                         }
                         LevelItem::IronWall => {
-                            commands.entity(bullet_entity).despawn();
-                            explosion_ew.send(ExplosionEvent {
+                            if scheduled.0.insert(bullet_entity) {
+                                commands.entity(bullet_entity).despawn();
+                            }
+                            explosion_ew.write(ExplosionEvent {
                                 pos: Vec3::new(
                                     bullet_transform.translation.x,
                                     bullet_transform.translation.y,
@@ -164,8 +174,10 @@ pub fn handle_bullet_collision(
 
                 if q_area_wall.contains(other_entity) {
                     info!("Bullet hit area wall");
-                    commands.entity(bullet_entity).despawn();
-                    explosion_ew.send(ExplosionEvent {
+                    if scheduled.0.insert(bullet_entity) {
+                        commands.entity(bullet_entity).despawn();
+                    }
+                    explosion_ew.write(ExplosionEvent {
                         pos: Vec3::new(
                             bullet_transform.translation.x,
                             bullet_transform.translation.y,
@@ -178,9 +190,13 @@ pub fn handle_bullet_collision(
                 if *bullet == Bullet::Player && q_enemies.contains(other_entity) {
                     info!("Player bullet hit enemy");
                     let enemy_transform = q_enemies.get(other_entity).unwrap();
-                    commands.entity(bullet_entity).despawn();
-                    commands.entity(other_entity).despawn();
-                    explosion_ew.send(ExplosionEvent {
+                    if scheduled.0.insert(bullet_entity) {
+                        commands.entity(bullet_entity).despawn();
+                    }
+                    if scheduled.0.insert(other_entity) {
+                        commands.entity(other_entity).despawn();
+                    }
+                    explosion_ew.write(ExplosionEvent {
                         pos: Vec3::new(
                             enemy_transform.translation.x,
                             enemy_transform.translation.y,
@@ -195,17 +211,19 @@ pub fn handle_bullet_collision(
                     let (player_transform, player_children) = q_players.get(other_entity).unwrap();
                     let mut player_has_shield = false;
                     for child in player_children.iter() {
-                        if q_shields.contains(*child) {
+                        if q_shields.contains(child) {
                             player_has_shield = true;
                             break;
                         }
                     }
 
-                    commands.entity(bullet_entity).despawn();
+                    if scheduled.0.insert(bullet_entity) {
+                        commands.entity(bullet_entity).despawn();
+                    }
 
                     if player_has_shield {
                         info!("Player has shield");
-                        explosion_ew.send(ExplosionEvent {
+                        explosion_ew.write(ExplosionEvent {
                             pos: Vec3::new(
                                 player_transform.translation.x,
                                 player_transform.translation.y,
@@ -214,8 +232,10 @@ pub fn handle_bullet_collision(
                             explosion_type: ExplosionType::BulletExplosion,
                         });
                     } else {
-                        commands.entity(other_entity).despawn_recursive();
-                        explosion_ew.send(ExplosionEvent {
+                        if scheduled.0.insert(other_entity) {
+                            commands.entity(other_entity).despawn();
+                        }
+                        explosion_ew.write(ExplosionEvent {
                             pos: Vec3::new(
                                 player_transform.translation.x,
                                 player_transform.translation.y,
@@ -277,7 +297,7 @@ pub fn spawn_bullet(
 
 pub fn spawn_explosion(
     mut commands: Commands,
-    mut explosion_er: EventReader<ExplosionEvent>,
+    mut explosion_er: MessageReader<ExplosionEvent>,
     explosion_assets: Res<ExplosionAssets>,
     asset_server: Res<AssetServer>,
     mut textures: ResMut<Assets<Image>>,
@@ -365,13 +385,14 @@ pub fn animate_explosion(
         With<Explosion>,
     >,
     time: Res<Time>,
+    mut scheduled: ResMut<ScheduledDespawn>,
 ) {
     for (entity, mut timer, indices, mut sprite) in &mut q_explosion {
         timer.0.tick(time.delta());
         if timer.0.just_finished() {
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index += 1;
-                if atlas.index > indices.last {
+                if atlas.index > indices.last && scheduled.0.insert(entity) {
                     commands.entity(entity).despawn();
                 }
             }
@@ -379,14 +400,26 @@ pub fn animate_explosion(
     }
 }
 
-pub fn cleanup_bullets(mut commands: Commands, q_bullets: Query<Entity, With<Bullet>>) {
+pub fn cleanup_bullets(
+    mut commands: Commands,
+    q_bullets: Query<Entity, With<Bullet>>,
+    mut scheduled: ResMut<ScheduledDespawn>,
+) {
     for entity in &q_bullets {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
-pub fn cleanup_explosions(mut commands: Commands, q_explosions: Query<Entity, With<Explosion>>) {
+pub fn cleanup_explosions(
+    mut commands: Commands,
+    q_explosions: Query<Entity, With<Explosion>>,
+    mut scheduled: ResMut<ScheduledDespawn>,
+) {
     for entity in &q_explosions {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }

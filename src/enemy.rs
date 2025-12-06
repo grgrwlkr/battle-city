@@ -47,16 +47,14 @@ pub fn auto_spawn_enemies(
         if enemy_marker.translation() == Vec3::ZERO {
             continue;
         }
-        marker_positions.push(enemy_marker.clone());
+        marker_positions.push(*enemy_marker);
     }
 
-    if marker_positions.len() > 0 {
+    if !marker_positions.is_empty() {
         // 随机地点
         let mut rng = rand::thread_rng();
-        let choosed_pos = marker_positions
-            .get(rng.gen_range(0..marker_positions.len()))
-            .unwrap()
-            .translation();
+        let idx = rng.gen_range(0..marker_positions.len());
+        let choosed_pos = marker_positions[idx].translation();
 
         // 不能距离战场坦克过近
         for enemy_pos in &q_enemies {
@@ -91,15 +89,9 @@ pub fn spawn_enemy(
     let enemies_atlas_layout_handle = atlas_layouts.add(enemies_texture_atlas);
 
     // 随机颜色
-    let indexes: Vec<i32> = enemies_sprite_index_sets()
-        .iter()
-        .map(|v| *v.get(0).unwrap())
-        .collect();
+    let indexes: Vec<i32> = enemies_sprite_index_sets().iter().map(|v| v[0]).collect();
     let mut rng = rand::thread_rng();
-    let choosed_index = indexes
-        .get(rng.gen_range(0..indexes.len()))
-        .unwrap()
-        .clone();
+    let choosed_index = indexes[rng.gen_range(0..indexes.len())];
 
     commands.spawn((
         Enemy,
@@ -155,7 +147,7 @@ pub fn enemies_move(
 ) {
     for (mut transform, mut direction, mut sprite, mut indices, mut timer) in &mut q_enemies {
         timer.0.tick(time.delta());
-        if !timer.0.finished() {
+        if !timer.0.is_finished() {
             match *direction {
                 common::Direction::Up => {
                     transform.translation.y += ENEMY_SPEED * time.delta_secs();
@@ -237,7 +229,7 @@ pub fn enemies_move(
                         break common::Direction::Right;
                     }
                 }
-                5 | 6 | 7 | 8 => {
+                5..=8 => {
                     if can_down {
                         break common::Direction::Down;
                     }
@@ -280,7 +272,7 @@ pub fn enemies_attack(
                 &mut atlas_layouts,
                 Bullet::Enemy,
                 transform.translation,
-                direction.clone(),
+                *direction,
             );
         }
     }
@@ -288,7 +280,7 @@ pub fn enemies_attack(
 
 pub fn handle_enemy_collision(
     mut q_enemies: Query<&mut EnemyChangeDirectionTimer, With<Enemy>>,
-    mut collision_er: EventReader<CollisionEvent>,
+    mut collision_er: MessageReader<CollisionEvent>,
 ) {
     for event in collision_er.read() {
         match event {
@@ -330,9 +322,15 @@ pub fn animate_enemies(
     }
 }
 
-pub fn cleanup_enemies(mut commands: Commands, q_enemies: Query<Entity, With<Enemy>>) {
+pub fn cleanup_enemies(
+    mut commands: Commands,
+    q_enemies: Query<Entity, With<Enemy>>,
+    mut scheduled: ResMut<crate::common::ScheduledDespawn>,
+) {
     for entity in &q_enemies {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -360,19 +358,19 @@ pub fn new_sprite_index(current_index: i32, direction: common::Direction) -> i32
             info!("found index_set");
             match direction {
                 common::Direction::Up => {
-                    return *index_set.get(0).unwrap();
+                    return index_set[0];
                 }
                 common::Direction::Right => {
-                    return *index_set.get(1).unwrap();
+                    return index_set[1];
                 }
                 common::Direction::Down => {
-                    return *index_set.get(2).unwrap();
+                    return index_set[2];
                 }
                 common::Direction::Left => {
-                    return *index_set.get(3).unwrap();
+                    return index_set[3];
                 }
             }
         }
     }
-    return 0;
+    0
 }

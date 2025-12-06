@@ -24,7 +24,7 @@ pub struct BornRemoveTimer(pub Timer);
 #[reflect(Component)]
 pub struct PlayerNo(pub u32);
 
-#[derive(Debug, Event)]
+#[derive(Debug, Message)]
 pub struct SpawnPlayerEvent {
     pos: Vec2,
     player_no: PlayerNo,
@@ -36,12 +36,13 @@ pub struct PlayerLives {
     pub player2: i8,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn auto_spawn_players(
     mut commands: Commands,
     q_players: Query<&PlayerNo>,
     q_player1_marker: Query<&Transform, With<Player1Marker>>,
     q_player2_marker: Query<&Transform, With<Player2Marker>>,
-    mut spawn_player_er: EventReader<SpawnPlayerEvent>,
+    mut spawn_player_er: MessageReader<SpawnPlayerEvent>,
     mut spawning_player1: Local<bool>,
     mut spawning_player2: Local<bool>,
     multiplayer_mode: Res<MultiplayerMode>,
@@ -338,24 +339,23 @@ pub fn players_attack(
 ) {
     for (player_no, transform, direction, mut refresh_bullet_timer) in &mut q_players {
         refresh_bullet_timer.tick(time.delta());
-        if (player_no.0 == 1 && keyboard_input.just_pressed(KeyCode::Space))
-            || (player_no.0 == 2 && keyboard_input.just_pressed(KeyCode::Enter))
+        if ((player_no.0 == 1 && keyboard_input.just_pressed(KeyCode::Space))
+            || (player_no.0 == 2 && keyboard_input.just_pressed(KeyCode::Enter)))
+            && refresh_bullet_timer.is_finished()
         {
-            if refresh_bullet_timer.finished() {
-                spawn_bullet(
-                    &mut commands,
-                    &asset_server,
-                    &mut atlas_layouts,
-                    Bullet::Player,
-                    transform.translation,
-                    direction.clone(),
-                );
-                commands.spawn((
-                    AudioPlayer(game_sounds.player_fire.clone()),
-                    PlaybackSettings::DESPAWN,
-                ));
-                refresh_bullet_timer.reset();
-            }
+            spawn_bullet(
+                &mut commands,
+                &asset_server,
+                &mut atlas_layouts,
+                Bullet::Player,
+                transform.translation,
+                *direction,
+            );
+            commands.spawn((
+                AudioPlayer(game_sounds.player_fire.clone()),
+                PlaybackSettings::DESPAWN,
+            ));
+            refresh_bullet_timer.reset();
         }
     }
 }
@@ -385,17 +385,19 @@ pub fn remove_shield(
     mut commands: Commands,
     time: Res<Time>,
     mut query: Query<(Entity, &mut ShieldRemoveTimer), With<Shield>>,
+    mut scheduled: ResMut<ScheduledDespawn>,
 ) {
     for (entity, mut timer) in query.iter_mut() {
         timer.0.tick(time.delta());
 
-        if timer.0.finished() {
+        if timer.0.is_finished() && scheduled.0.insert(entity) {
             commands.entity(entity).despawn();
         }
     }
 }
 
 // 出生动画播放
+#[allow(clippy::too_many_arguments)]
 pub fn animate_born(
     mut commands: Commands,
     time: Res<Time>,
@@ -411,7 +413,8 @@ pub fn animate_born(
         ),
         With<Born>,
     >,
-    mut spawn_player_ew: EventWriter<SpawnPlayerEvent>,
+    mut spawn_player_ew: MessageWriter<SpawnPlayerEvent>,
+    mut scheduled: ResMut<ScheduledDespawn>,
 ) {
     for (entity, player_no, transform, mut timer, indices, mut sprite, mut born_remove_timer) in
         &mut query
@@ -428,25 +431,39 @@ pub fn animate_born(
                 };
             }
         }
-        if born_remove_timer.0.finished() {
-            commands.entity(entity).despawn();
-            spawn_player_ew.send(SpawnPlayerEvent {
+        if born_remove_timer.0.is_finished() {
+            if scheduled.0.insert(entity) {
+                commands.entity(entity).despawn();
+            }
+            spawn_player_ew.write(SpawnPlayerEvent {
                 pos: transform.translation.truncate(),
-                player_no: player_no.clone(),
+                player_no: *player_no,
             });
         }
     }
 }
 
-pub fn cleanup_players(mut commands: Commands, q_players: Query<Entity, With<PlayerNo>>) {
+pub fn cleanup_players(
+    mut commands: Commands,
+    q_players: Query<Entity, With<PlayerNo>>,
+    mut scheduled: ResMut<ScheduledDespawn>,
+) {
     for entity in &q_players {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
-pub fn cleanup_born(mut commands: Commands, q_born: Query<Entity, With<Born>>) {
+pub fn cleanup_born(
+    mut commands: Commands,
+    q_born: Query<Entity, With<Born>>,
+    mut scheduled: ResMut<ScheduledDespawn>,
+) {
     for entity in &q_born {
-        commands.entity(entity).despawn_recursive();
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
