@@ -16,30 +16,30 @@ pub const LEVEL_TRANSLATION_OFFSET: Vec3 = Vec3::new(
     0.0,
 );
 
-// 关卡地图元素
+// Level map elements
 #[derive(Component, Clone, PartialEq, Eq, Debug, Default)]
 pub enum LevelItem {
     #[default]
     None,
-    // 石墙
+    // Stone wall
     StoneWall,
-    // 贴墙
+    // Iron wall
     IronWall,
-    // 树木
+    // Tree
     Tree,
-    // 水
+    // Water
     Water,
-    // 家
+    // Home/base
     Home,
 }
 
-// 关卡player1位置标记
+// Level player1 position marker
 #[derive(Component, Default)]
 pub struct Player1Marker;
-// 关卡player2位置标记
+// Level player2 position marker
 #[derive(Component, Default)]
 pub struct Player2Marker;
-// 关卡敌人位置标记
+// Level enemy position marker
 #[derive(Component, Default)]
 pub struct EnemiesMarker;
 
@@ -161,7 +161,7 @@ pub fn setup_levels(
     q_ldtk_world: Query<(), With<LdtkProjectHandle>>,
 ) {
     if q_ldtk_world.iter().len() > 0 {
-        // 从Paused状态进入时无需再load ldtk
+        // No need to reload LDTK when entering from Paused state
         return;
     }
     commands.spawn(LdtkWorldBundle {
@@ -202,7 +202,7 @@ pub fn spawn_ldtk_entity(
     }
 }
 
-// 水动画播放
+// Water animation
 pub fn animate_water(
     time: Res<Time>,
     mut query: Query<(
@@ -216,7 +216,7 @@ pub fn animate_water(
         if *level_item == LevelItem::Water {
             timer.0.tick(time.delta());
             if timer.0.just_finished() {
-                // 切换到下一个sprite
+                // Switch to next sprite
                 if let Some(atlas) = &mut sprite.texture_atlas {
                     atlas.index = if atlas.index == indices.last {
                         indices.first
@@ -240,20 +240,20 @@ pub fn auto_switch_level(
     mut app_state: ResMut<NextState<AppState>>,
     mut scheduled: ResMut<crate::common::ScheduledDespawn>,
 ) {
-    // 已生成的敌人数量达到最大值 并且 敌人全部阵亡，切换到下一关卡
+    // Switch to next level when maximum enemies spawned and all enemies are destroyed
     if level_spawned_enemies.0 == ENEMIES_PER_LEVEL && q_enemies.iter().len() == 0 {
         if let LevelSelection::Indices(LevelIndices { level, .. }) = *level_selection {
             if level as i32 == MAX_LEVELS - 1 {
-                // TODO 游戏胜利
+                // TODO: Game victory
                 info!("win the game!");
                 app_state.set(AppState::StartMenu);
             } else {
-                // 下一关卡
+                // Next level
                 info!("Switch to next level, index={}", level + 1);
                 *level_selection = LevelSelection::index(level + 1);
                 level_spawned_enemies.0 = 0;
 
-                // 重新生成玩家
+                // Respawn players
                 for player in &q_players {
                     if scheduled.0.insert(player) {
                         commands.entity(player).despawn();
@@ -267,8 +267,8 @@ pub fn auto_switch_level(
             }
         }
     }
-        // Placeholder for patch format
-        // No operation changes
+    // Placeholder for patch format
+    // No operation changes
 }
 
 pub fn animate_home(

@@ -1,26 +1,26 @@
 use bevy::prelude::*;
 use std::collections::HashSet;
 
-// 关卡地图行数和列数
+// Number of rows and columns in the level map
 pub const LEVEL_ROWS: i32 = 18;
 pub const LEVEL_COLUMNS: i32 = 27;
 pub const TILE_SIZE: f32 = 32.0;
-// 关卡数量
+// Number of levels
 pub const MAX_LEVELS: i32 = 2;
-// 同时共存的敌人最大数量
+// Maximum number of enemies that can coexist simultaneously
 pub const MAX_LIVE_ENEMIES: i32 = 5;
-// 每关敌人数量
+// Number of enemies per level
 pub const ENEMIES_PER_LEVEL: i32 = 12;
-// 坦克刷新子弹间隔（秒）
+// Tank bullet refresh interval (seconds)
 pub const PLAYER_REFRESH_BULLET_INTERVAL: f32 = 0.5;
 pub const ENEMY_REFRESH_BULLET_INTERVAL: f32 = 2.0;
-// 坦克速度、大小和缩放比例
+// Tank speed, size and scale
 pub const PLAYER_SPEED: f32 = 150.0;
 pub const ENEMY_SPEED: f32 = 100.0;
 pub const TANK_SIZE: u32 = 28;
 pub const TANK_SCALE: f32 = 0.8;
 
-// sprite z轴顺序
+// Sprite z-axis ordering
 pub const SPRITE_GAME_OVER_ORDER: f32 = 4.0;
 pub const SPRITE_TREE_ORDER: f32 = 3.0;
 pub const SPRITE_PLAYER_ORDER: f32 = 2.0;
@@ -40,7 +40,7 @@ pub enum MultiplayerMode {
     TwoPlayers,
 }
 
-// 方向
+// Direction
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Left,
@@ -58,7 +58,7 @@ pub struct AnimationIndices {
     pub last: usize,
 }
 
-// 坦克刷新子弹计时器
+// Tank bullet refresh timer
 #[derive(Component, Deref, DerefMut)]
 pub struct TankRefreshBulletTimer(pub Timer);
 

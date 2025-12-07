@@ -13,14 +13,14 @@ use crate::{
     player::PlayerNo,
 };
 
-// 当前关卡生成的敌人数量
+// Number of enemies spawned in the current level
 #[derive(Resource)]
 pub struct LevelSpawnedEnemies(pub i32);
 
 #[derive(Component)]
 pub struct Enemy;
 
-// 转向计时器
+// Direction change timer
 #[derive(Component)]
 pub struct EnemyChangeDirectionTimer(pub Timer);
 
@@ -34,16 +34,16 @@ pub fn auto_spawn_enemies(
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     if q_enemies.into_iter().len() >= MAX_LIVE_ENEMIES as usize {
-        // 战场上存活敌人已达到最大值
+        // Maximum number of alive enemies on the battlefield has been reached
         return;
     }
     if level_spawned_enemies.0 == ENEMIES_PER_LEVEL {
-        // 本关卡已生成敌人数量达最大值
+        // Maximum number of enemies spawned for this level has been reached
         return;
     }
     let mut marker_positions = Vec::new();
     for enemy_marker in &q_enemies_marker {
-        // 防止player1_marker还未初始化
+        // Prevent enemy_marker from being used before initialization
         if enemy_marker.translation() == Vec3::ZERO {
             continue;
         }
@@ -51,12 +51,12 @@ pub fn auto_spawn_enemies(
     }
 
     if !marker_positions.is_empty() {
-        // 随机地点
+        // Random location
         let mut rng = rand::thread_rng();
         let idx = rng.gen_range(0..marker_positions.len());
         let choosed_pos = marker_positions[idx].translation();
 
-        // 不能距离战场坦克过近
+        // Cannot be too close to tanks on the battlefield
         for enemy_pos in &q_enemies {
             if choosed_pos.distance(enemy_pos.translation) < 2. * TILE_SIZE {
                 return;
@@ -88,7 +88,7 @@ pub fn spawn_enemy(
         TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 8, None, None);
     let enemies_atlas_layout_handle = atlas_layouts.add(enemies_texture_atlas);
 
-    // 随机颜色
+    // Random color
     let indexes: Vec<i32> = enemies_sprite_index_sets().iter().map(|v| v[0]).collect();
     let mut rng = rand::thread_rng();
     let choosed_index = indexes[rng.gen_range(0..indexes.len())];
@@ -129,8 +129,8 @@ pub fn spawn_enemy(
     ));
 }
 
-// TODO 发现玩家后主动攻击
-// TODO 树林可躲藏
+// TODO: Actively attack when player is detected
+// TODO: Trees can provide cover
 pub fn enemies_move(
     mut q_enemies: Query<
         (
@@ -165,13 +165,13 @@ pub fn enemies_move(
             continue;
         }
 
-        // 重新选择方向
+        // Choose a new direction
         let mut can_left = true;
         let mut can_right = true;
         let mut can_up = true;
         let mut can_down = true;
 
-        // 当前可走路径
+        // Current available paths
         for (level_item, level_item_transform) in &q_level_items {
             if *level_item == LevelItem::Tree {
                 continue;
@@ -209,7 +209,7 @@ pub fn enemies_move(
             continue;
         }
 
-        // 根据权重随机一个方向
+        // Randomly choose a direction based on weights
         let mut rng = rand::thread_rng();
         let choosed_direction = loop {
             let rand = rng.gen_range(0..9);
@@ -238,7 +238,7 @@ pub fn enemies_move(
             }
         };
 
-        // 设置方向和sprite
+        // Set direction and sprite
         *direction = choosed_direction;
         if let Some(atlas) = &mut sprite.texture_atlas {
             atlas.index = new_sprite_index(atlas.index as i32, *direction) as usize;
@@ -248,7 +248,7 @@ pub fn enemies_move(
             };
         }
 
-        // 重置转向计时器
+        // Reset direction change timer
         timer.0.reset();
     }
 }
@@ -294,7 +294,7 @@ pub fn handle_enemy_collision(
                     continue;
                 };
 
-                // 重置转向计时器
+                // Reset direction change timer
                 let mut change_direction_timer = q_enemies.get_mut(enemy_entity).unwrap();
                 change_direction_timer.0.reset();
             }
@@ -302,7 +302,7 @@ pub fn handle_enemy_collision(
     }
 }
 
-// 坦克移动动画播放
+// Tank movement animation
 pub fn animate_enemies(
     time: Res<Time>,
     mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<Enemy>>,
@@ -310,7 +310,7 @@ pub fn animate_enemies(
     for (mut timer, indices, mut sprite) in &mut query {
         timer.0.tick(time.delta());
         if timer.0.just_finished() {
-            // 切换到下一个sprite
+            // Switch to next sprite
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index = if atlas.index == indices.last {
                     indices.first
@@ -340,7 +340,7 @@ pub fn reset_level_spawned_enemies(mut level_spawned_enemies: ResMut<LevelSpawne
 
 pub fn enemies_sprite_index_sets() -> Vec<Vec<i32>> {
     vec![
-        // 上右下左 + 其他可能index
+        // Up, Right, Down, Left + other possible indices
         vec![0, 8, 16, 24, 1, 9, 17, 25],
         vec![2, 10, 18, 26, 3, 11, 19, 27],
         vec![4, 12, 20, 28, 5, 13, 21, 29],

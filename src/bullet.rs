@@ -57,7 +57,7 @@ pub fn setup_explosion_assets(mut commands: Commands, asset_server: Res<AssetSer
     });
 }
 
-// 炮弹移动
+// Bullet movement
 pub fn move_bullet(
     mut q_bullet: Query<(&mut Transform, &Direction), With<Bullet>>,
     time: Res<Time>,
@@ -114,7 +114,7 @@ pub fn handle_bullet_collision(
                 let (_, bullet, bullet_transform) = q_bullets.get(bullet_entity).unwrap();
 
                 info!("bullet hit something");
-                // 另一个物体
+                // Other object
                 if q_level_items.contains(other_entity) {
                     info!("Bullet hit level item");
                     let (level_item, level_item_transform, _) =

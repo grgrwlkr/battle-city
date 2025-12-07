@@ -6,15 +6,15 @@ use crate::common::{self, *};
 use crate::level::Player2Marker;
 use crate::level::{Player1Marker, LEVEL_TRANSLATION_OFFSET};
 
-// 出生保护盾
+// Spawn protection shield
 #[derive(Component)]
 pub struct Shield;
 
-// 出生保护盾计时
+// Spawn protection shield timer
 #[derive(Component)]
 pub struct ShieldRemoveTimer(pub Timer);
 
-// 出生特效
+// Spawn effect
 #[derive(Component)]
 pub struct Born;
 #[derive(Component)]
@@ -63,7 +63,7 @@ pub fn auto_spawn_players(
     if !player1_exists {
         for player1_marker in &q_player1_marker {
             if !*spawning_player1 && player_lives.player1 > 0 {
-                // 出生动画
+                // Spawn animation
                 spawn_born(
                     player1_marker.translation + LEVEL_TRANSLATION_OFFSET,
                     PlayerNo(1),
@@ -78,7 +78,7 @@ pub fn auto_spawn_players(
     if !player2_exists && *multiplayer_mode == MultiplayerMode::TwoPlayers {
         for player2_marker in &q_player2_marker {
             if !*spawning_player2 && player_lives.player2 > 0 {
-                // 出生动画
+                // Spawn animation
                 spawn_born(
                     player2_marker.translation + LEVEL_TRANSLATION_OFFSET,
                     PlayerNo(2),
@@ -95,22 +95,22 @@ pub fn auto_spawn_players(
     let shield_texture_atlas = TextureAtlasLayout::from_grid(UVec2::new(31, 31), 1, 2, None, None);
     let shield_atlas_layout_handle = atlas_layouts.add(shield_texture_atlas);
 
-    // 玩家1
+    // Player 1
     let player1_texture_handle = asset_server.load("textures/tank1.bmp");
     let player1_texture_atlas =
         TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 4, None, None);
     let player1_atlas_layout_handle = atlas_layouts.add(player1_texture_atlas);
 
-    // 玩家2
+    // Player 2
     let player2_texture_handle = asset_server.load("textures/tank2.bmp");
     let player2_texture_atlas =
         TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 4, None, None);
     let player2_atlas_layout_handle = atlas_layouts.add(player2_texture_atlas);
 
-    // 出生动画完毕后，进行player创建
+    // After spawn animation completes, create player
     for spawn_player_event in spawn_player_er.read() {
         dbg!(spawn_player_event);
-        // 保护盾
+        // Protection shield
         let shield = commands
             .spawn((
                 Shield,
@@ -122,14 +122,14 @@ pub fn auto_spawn_players(
                     }),
                     ..default()
                 },
-                Transform::from_translation(Vec3::new(0.0, 0.0, -1.0)), // 通过z轴控制sprite order
+                Transform::from_translation(Vec3::new(0.0, 0.0, -1.0)), // Control sprite order via z-axis
                 AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
                 AnimationIndices { first: 0, last: 1 },
                 ShieldRemoveTimer(Timer::from_seconds(5.0, TimerMode::Once)),
             ))
             .id();
 
-        // 坦克
+        // Tank
         let tank = commands
             .spawn((
                 spawn_player_event.player_no,
@@ -163,7 +163,7 @@ pub fn auto_spawn_players(
                 AnimationIndices { first: 0, last: 1 },
                 RigidBody::Dynamic,
                 Velocity::zero(),
-                // 圆形碰撞体防止因ROTATION_LOCKED被地形卡住
+                // Circular collider prevents getting stuck on terrain due to ROTATION_LOCKED
                 Collider::ball(TANK_SIZE as f32 * TANK_SCALE / 2.0 + 2.0),
                 ActiveEvents::COLLISION_EVENTS,
                 LockedAxes::ROTATION_LOCKED,
@@ -172,14 +172,14 @@ pub fn auto_spawn_players(
 
         commands.entity(tank).add_child(shield);
 
-        // 生命条数减少
+        // Decrease lives
         if spawn_player_event.player_no.0 == 1 {
             player_lives.player1 -= 1;
         } else if spawn_player_event.player_no.0 == 2 {
             player_lives.player2 -= 1;
         }
 
-        // 重置状态
+        // Reset state
         if spawn_player_event.player_no.0 == 1 {
             *spawning_player1 = false;
         } else if spawn_player_event.player_no.0 == 2 {
@@ -195,7 +195,7 @@ pub fn spawn_born(
     asset_server: &Res<AssetServer>,
     atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    // 出生特效
+    // Spawn effect
     println!("spawn born once");
     let born_texture_handle = asset_server.load("textures/born.bmp");
 
@@ -219,7 +219,7 @@ pub fn spawn_born(
     ));
 }
 
-// 玩家移动坦克
+// Player tank movement
 pub fn players_move(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<(
@@ -253,7 +253,7 @@ pub fn players_move(
             velocity.linvel = Vec2::ZERO;
             continue;
         }
-        // 一次只能移动一个方向
+        // Can only move in one direction at a time
         if (player_no.0 == 1 && keyboard_input.pressed(KeyCode::KeyW))
             || (player_no.0 == 2 && keyboard_input.pressed(KeyCode::ArrowUp))
         {
@@ -302,7 +302,7 @@ pub fn players_move(
     }
 }
 
-// 坦克移动动画播放
+// Tank movement animation
 pub fn animate_players(
     time: Res<Time>,
     mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<PlayerNo>>,
@@ -310,7 +310,7 @@ pub fn animate_players(
     for (mut timer, indices, mut sprite) in &mut query {
         timer.0.tick(time.delta());
         if timer.0.just_finished() {
-            // 切换到下一个sprite
+            // Switch to next sprite
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index = if atlas.index == indices.last {
                     indices.first
@@ -322,7 +322,7 @@ pub fn animate_players(
     }
 }
 
-// 玩家攻击
+// Player attack
 pub fn players_attack(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -360,7 +360,7 @@ pub fn players_attack(
     }
 }
 
-// 保护盾动画播放
+// Shield animation
 pub fn animate_shield(
     time: Res<Time>,
     mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<Shield>>,
@@ -368,7 +368,7 @@ pub fn animate_shield(
     for (mut timer, indices, mut sprite) in &mut query {
         timer.0.tick(time.delta());
         if timer.0.just_finished() {
-            // 切换到下一个sprite
+            // Switch to next sprite
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index = if atlas.index == indices.last {
                     indices.first
@@ -380,7 +380,7 @@ pub fn animate_shield(
     }
 }
 
-// 移除保护盾
+// Remove protection shield
 pub fn remove_shield(
     mut commands: Commands,
     time: Res<Time>,
@@ -396,7 +396,7 @@ pub fn remove_shield(
     }
 }
 
-// 出生动画播放
+// Spawn animation
 #[allow(clippy::too_many_arguments)]
 pub fn animate_born(
     mut commands: Commands,
@@ -422,7 +422,7 @@ pub fn animate_born(
         timer.0.tick(time.delta());
         born_remove_timer.0.tick(time.delta());
         if timer.0.just_finished() {
-            // 切换到下一个sprite
+            // Switch to next sprite
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index = if atlas.index == indices.last {
                     indices.first

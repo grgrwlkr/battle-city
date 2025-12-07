@@ -20,7 +20,7 @@ use bevy_rapier2d::prelude::*;
 
 const BACKGROUND_COLOR: Color = Color::BLACK;
 
-// TODO 坦克碰撞导致被迫移动
+// TODO: Tank collision causes forced movement
 fn main() {
     App::new()
         .register_type::<PlayerNo>()
@@ -41,6 +41,7 @@ fn main() {
             player1: 3,
             player2: 3,
         })
+        .init_resource::<ScheduledDespawn>()
         .register_ldtk_entity::<level::StoneWallBundle>("StoneWall")
         .register_ldtk_entity::<level::IronWallBundle>("IronWall")
         .register_ldtk_entity::<level::WaterBundle>("Water")
@@ -139,12 +140,21 @@ fn main() {
                 .run_if(in_state(AppState::Playing)),
         )
         // Post-collision effects
+        // spawn_explosion and animate_born need to work in Playing and GameOver states
+        // to allow animations to complete
         .add_systems(
             Update,
             (spawn_explosion, animate_born)
                 .in_set(GameplaySet::Effects)
                 .after(GameplaySet::Collision)
                 .run_if(in_state(AppState::Playing)),
+        )
+        // Same systems for GameOver state (without collision dependency as collisions don't happen in GameOver)
+        .add_systems(
+            Update,
+            (spawn_explosion, animate_born)
+                .in_set(GameplaySet::Effects)
+                .run_if(in_state(AppState::GameOver)),
         )
         // Animations
         .add_systems(

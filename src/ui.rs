@@ -90,12 +90,12 @@ pub fn animate_game_over(
     mut stop_secs: Local<f32>,
 ) {
     for mut transform in &mut q_game_over {
-        // 上移game over图片
+        // Move game over image up
         if transform.translation.y < 0. {
             transform.translation.y += time.delta_secs() * 150.;
             *stop_secs = 0.0;
         } else {
-            // 停顿1秒后，切换到Start Menu
+            // After 1 second pause, switch to Start Menu
             *stop_secs += time.delta_secs();
             if *stop_secs > 1.0 {
                 app_state.set(AppState::StartMenu);
@@ -146,7 +146,7 @@ pub fn pause_game(
     mut cold_start: Local<Duration>,
     time: Res<Time>,
 ) {
-    // 增加冷启动防止 pause_game 和 unpause_game 都会收到input，导致Paued<->Playing不断循环
+    // Add cold start to prevent both pause_game and unpause_game from receiving input, causing Paused<->Playing infinite loop
     *cold_start += time.delta();
     if cold_start.as_millis() > 100 && keyboard_input.just_released(KeyCode::Escape) {
         info!("Pause game");
