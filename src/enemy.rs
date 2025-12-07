@@ -4,17 +4,14 @@ use rand::Rng;
 
 use crate::{
     bullet::{spawn_bullet, Bullet},
-    common::{
-        self, AnimationIndices, AnimationTimer, TankRefreshBulletTimer, ENEMIES_PER_LEVEL,
-        ENEMY_REFRESH_BULLET_INTERVAL, ENEMY_SPEED, MAX_LIVE_ENEMIES, TANK_SCALE, TANK_SIZE,
-        TILE_SIZE,
-    },
+    common::{self, AnimationIndices, AnimationTimer, AppState, TankRefreshBulletTimer, TILE_SIZE},
+    config::GameConfig,
     level::{EnemiesMarker, LevelItem},
     player::PlayerNo,
 };
 
 // Number of enemies spawned in the current level
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct LevelSpawnedEnemies(pub i32);
 
 #[derive(Component)]
@@ -32,23 +29,26 @@ pub fn auto_spawn_enemies(
     q_players: Query<&Transform, With<PlayerNo>>,
     asset_server: Res<AssetServer>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    game_config: Res<GameConfig>,
 ) {
+    let max_live_enemies = game_config.enemy.max_live_enemies;
+    let enemies_per_level = game_config.enemy.enemies_per_level;
     let current_enemy_count = q_enemies.iter().len();
-    if current_enemy_count >= MAX_LIVE_ENEMIES as usize {
+    if current_enemy_count >= max_live_enemies as usize {
         // Maximum number of alive enemies on the battlefield has been reached
         trace!(
             "Cannot spawn enemy: maximum alive enemies reached ({}/{})",
             current_enemy_count,
-            MAX_LIVE_ENEMIES
+            max_live_enemies
         );
         return;
     }
-    if level_spawned_enemies.0 >= ENEMIES_PER_LEVEL {
+    if level_spawned_enemies.0 >= enemies_per_level {
         // Maximum number of enemies spawned for this level has been reached
         trace!(
             "Cannot spawn enemy: level enemy limit reached ({}/{})",
             level_spawned_enemies.0,
-            ENEMIES_PER_LEVEL
+            enemies_per_level
         );
         return;
     }
@@ -90,14 +90,15 @@ pub fn auto_spawn_enemies(
         }
         info!(
             "Spawning enemy at position ({:.1}, {:.1}), level progress: {}/{}, alive enemies: {}/{}",
-            choosed_pos.x, choosed_pos.y, level_spawned_enemies.0 + 1, ENEMIES_PER_LEVEL,
-            current_enemy_count + 1, MAX_LIVE_ENEMIES
+            choosed_pos.x, choosed_pos.y, level_spawned_enemies.0 + 1, enemies_per_level,
+            current_enemy_count + 1, max_live_enemies
         );
         spawn_enemy(
             choosed_pos,
             &mut commands,
             &asset_server,
             &mut atlas_layouts,
+            &game_config,
         );
         level_spawned_enemies.0 += 1;
     }
@@ -108,10 +109,12 @@ pub fn spawn_enemy(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>,
+    game_config: &GameConfig,
 ) {
+    let tank_size = game_config.enemy.tank_size;
     let enemies_texture_handle = asset_server.load("textures/enemies.bmp");
     let enemies_texture_atlas =
-        TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 8, None, None);
+        TextureAtlasLayout::from_grid(UVec2::new(tank_size, tank_size), 8, 8, None, None);
     let enemies_atlas_layout_handle = atlas_layouts.add(enemies_texture_atlas);
 
     // Random color
@@ -132,11 +135,11 @@ pub fn spawn_enemy(
         },
         Transform {
             translation: pos,
-            scale: Vec3::splat(TANK_SCALE),
+            scale: Vec3::splat(game_config.enemy.tank_scale),
             ..default()
         },
         TankRefreshBulletTimer(Timer::from_seconds(
-            ENEMY_REFRESH_BULLET_INTERVAL,
+            game_config.enemy.bullet_cooldown,
             TimerMode::Repeating,
         )),
         EnemyChangeDirectionTimer(Timer::from_seconds(1.0, TimerMode::Once)),
@@ -148,8 +151,8 @@ pub fn spawn_enemy(
         common::Direction::Up,
         RigidBody::Dynamic,
         Collider::cuboid(
-            TANK_SIZE as f32 * TANK_SCALE / 2.0,
-            TANK_SIZE as f32 * TANK_SCALE / 2.0,
+            tank_size as f32 * game_config.enemy.tank_scale / 2.0,
+            tank_size as f32 * game_config.enemy.tank_scale / 2.0,
         ),
         ActiveEvents::COLLISION_EVENTS,
         LockedAxes::ROTATION_LOCKED,
@@ -171,22 +174,24 @@ pub fn enemies_move(
     >,
     q_level_items: Query<(&LevelItem, &GlobalTransform)>,
     time: Res<Time>,
+    game_config: Res<GameConfig>,
 ) {
+    let enemy_speed = game_config.enemy.speed;
     for (mut transform, mut direction, mut sprite, mut indices, mut timer) in &mut q_enemies {
         timer.0.tick(time.delta());
         if !timer.0.is_finished() {
             match *direction {
                 common::Direction::Up => {
-                    transform.translation.y += ENEMY_SPEED * time.delta_secs();
+                    transform.translation.y += enemy_speed * time.delta_secs();
                 }
                 common::Direction::Right => {
-                    transform.translation.x += ENEMY_SPEED * time.delta_secs();
+                    transform.translation.x += enemy_speed * time.delta_secs();
                 }
                 common::Direction::Down => {
-                    transform.translation.y -= ENEMY_SPEED * time.delta_secs();
+                    transform.translation.y -= enemy_speed * time.delta_secs();
                 }
                 common::Direction::Left => {
-                    transform.translation.x -= ENEMY_SPEED * time.delta_secs();
+                    transform.translation.x -= enemy_speed * time.delta_secs();
                 }
             }
             continue;
@@ -199,12 +204,13 @@ pub fn enemies_move(
         let mut can_down = true;
 
         // Current available paths
+        let tank_size = game_config.enemy.tank_size as f32;
         for (level_item, level_item_transform) in &q_level_items {
             if *level_item == LevelItem::Tree {
                 continue;
             }
             if (level_item_transform.translation().x - transform.translation.x).abs()
-                < (TANK_SIZE as f32 + TILE_SIZE) / 2.0 - 5.0
+                < (tank_size + TILE_SIZE) / 2.0 - 5.0
             {
                 if level_item_transform.translation().y > transform.translation.y
                     && level_item_transform.translation().y - transform.translation.y < TILE_SIZE
@@ -218,7 +224,7 @@ pub fn enemies_move(
                 }
             }
             if (level_item_transform.translation().y - transform.translation.y).abs()
-                < (TANK_SIZE as f32 + TILE_SIZE) / 2. - 5.0
+                < (tank_size + TILE_SIZE) / 2. - 5.0
             {
                 if level_item_transform.translation().x > transform.translation.x
                     && level_item_transform.translation().x - transform.translation.x < TILE_SIZE
@@ -328,8 +334,14 @@ pub fn handle_enemy_collision(
 
                 // Reset direction change timer
                 trace!("Enemy collision detected, resetting direction change timer for enemy entity {:?}", enemy_entity);
-                let mut change_direction_timer = q_enemies.get_mut(enemy_entity).unwrap();
-                change_direction_timer.0.reset();
+                if let Ok(mut change_direction_timer) = q_enemies.get_mut(enemy_entity) {
+                    change_direction_timer.0.reset();
+                } else {
+                    warn!(
+                        "Enemy entity {:?} not found in query when trying to reset timer",
+                        enemy_entity
+                    );
+                }
             }
         }
     }
@@ -357,6 +369,60 @@ pub fn cleanup_enemies(
             trace!("Despawning enemy entity {:?}", entity);
             commands.entity(entity).despawn();
         }
+    }
+}
+
+/// Plugin for enemy-related systems and resources
+pub struct EnemyPlugin;
+
+impl Plugin for EnemyPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<LevelSpawnedEnemies>()
+            .add_systems(
+                OnEnter(AppState::StartMenu),
+                (cleanup_enemies, reset_level_spawned_enemies),
+            )
+            .add_systems(
+                Update,
+                auto_spawn_enemies
+                    .in_set(crate::common::GameplaySet::Spawning)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                enemies_move
+                    .in_set(crate::common::GameplaySet::Movement)
+                    .after(crate::common::GameplaySet::Spawning)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                enemies_attack
+                    .in_set(crate::common::GameplaySet::Combat)
+                    .after(crate::common::GameplaySet::Movement)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                animate_enemies
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .after(crate::common::GameplaySet::Effects)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            // Animation systems for GameOver state
+            .add_systems(
+                Update,
+                animate_enemies
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .run_if(in_state(AppState::GameOver)),
+            )
+            .add_systems(
+                Update,
+                handle_enemy_collision
+                    .in_set(crate::common::GameplaySet::Collision)
+                    .after(crate::common::GameplaySet::BulletMovement)
+                    .run_if(in_state(AppState::Playing)),
+            );
     }
 }
 

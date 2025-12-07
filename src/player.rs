@@ -2,9 +2,10 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::bullet::*;
-use crate::common::{self, *};
+use crate::common::{self, AppState, *};
+use crate::config::GameConfig;
 use crate::level::Player2Marker;
-use crate::level::{Player1Marker, LEVEL_TRANSLATION_OFFSET};
+use crate::level::{level_translation_offset, Player1Marker};
 
 // Spawn protection shield
 #[derive(Component)]
@@ -36,6 +37,15 @@ pub struct PlayerLives {
     pub player2: i8,
 }
 
+impl Default for PlayerLives {
+    fn default() -> Self {
+        Self {
+            player1: 3,
+            player2: 3,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn auto_spawn_players(
     mut commands: Commands,
@@ -49,6 +59,7 @@ pub fn auto_spawn_players(
     mut player_lives: ResMut<PlayerLives>,
     asset_server: Res<AssetServer>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    game_config: Res<GameConfig>,
 ) {
     let mut player1_exists = false;
     let mut player2_exists = false;
@@ -63,14 +74,15 @@ pub fn auto_spawn_players(
     if !player1_exists {
         for player1_marker in &q_player1_marker {
             if !*spawning_player1 && player_lives.player1 > 0 {
+                // Spawn animation
+                let offset = level_translation_offset(&game_config);
                 info!(
                     "Starting spawn animation for Player 1 at position {:?}, remaining lives: {}",
-                    player1_marker.translation + LEVEL_TRANSLATION_OFFSET,
+                    player1_marker.translation + offset,
                     player_lives.player1
                 );
-                // Spawn animation
                 spawn_born(
-                    player1_marker.translation + LEVEL_TRANSLATION_OFFSET,
+                    player1_marker.translation + offset,
                     PlayerNo(1),
                     &mut commands,
                     &asset_server,
@@ -83,14 +95,16 @@ pub fn auto_spawn_players(
     if !player2_exists && *multiplayer_mode == MultiplayerMode::TwoPlayers {
         for player2_marker in &q_player2_marker {
             if !*spawning_player2 && player_lives.player2 > 0 {
+                let offset = level_translation_offset(&game_config);
                 info!(
                     "Starting spawn animation for Player 2 at position {:?}, remaining lives: {}",
-                    player2_marker.translation + LEVEL_TRANSLATION_OFFSET,
+                    player2_marker.translation + offset,
                     player_lives.player2
                 );
                 // Spawn animation
+                let offset = level_translation_offset(&game_config);
                 spawn_born(
-                    player2_marker.translation + LEVEL_TRANSLATION_OFFSET,
+                    player2_marker.translation + offset,
                     PlayerNo(2),
                     &mut commands,
                     &asset_server,
@@ -106,15 +120,16 @@ pub fn auto_spawn_players(
     let shield_atlas_layout_handle = atlas_layouts.add(shield_texture_atlas);
 
     // Player 1
+    let tank_size = game_config.player.tank_size;
     let player1_texture_handle = asset_server.load("textures/tank1.bmp");
     let player1_texture_atlas =
-        TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 4, None, None);
+        TextureAtlasLayout::from_grid(UVec2::new(tank_size, tank_size), 8, 4, None, None);
     let player1_atlas_layout_handle = atlas_layouts.add(player1_texture_atlas);
 
     // Player 2
     let player2_texture_handle = asset_server.load("textures/tank2.bmp");
     let player2_texture_atlas =
-        TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 4, None, None);
+        TextureAtlasLayout::from_grid(UVec2::new(tank_size, tank_size), 8, 4, None, None);
     let player2_atlas_layout_handle = atlas_layouts.add(player2_texture_atlas);
 
     // After spawn animation completes, create player
@@ -167,12 +182,14 @@ pub fn auto_spawn_players(
                     ..default()
                 },
                 Transform {
-                    translation: spawn_player_event.pos.extend(SPRITE_PLAYER_ORDER),
-                    scale: Vec3::splat(TANK_SCALE),
+                    translation: spawn_player_event
+                        .pos
+                        .extend(game_config.sprite_order.player),
+                    scale: Vec3::splat(game_config.player.tank_scale),
                     ..default()
                 },
                 TankRefreshBulletTimer(Timer::from_seconds(
-                    PLAYER_REFRESH_BULLET_INTERVAL,
+                    game_config.player.bullet_cooldown,
                     TimerMode::Once,
                 )),
                 common::Direction::Up,
@@ -181,7 +198,9 @@ pub fn auto_spawn_players(
                 RigidBody::Dynamic,
                 Velocity::zero(),
                 // Circular collider prevents getting stuck on terrain due to ROTATION_LOCKED
-                Collider::ball(TANK_SIZE as f32 * TANK_SCALE / 2.0 + 2.0),
+                Collider::ball(
+                    game_config.player.tank_size as f32 * game_config.player.tank_scale / 2.0 + 2.0,
+                ),
                 ActiveEvents::COLLISION_EVENTS,
                 LockedAxes::ROTATION_LOCKED,
             ))
@@ -260,7 +279,9 @@ pub fn players_move(
         &mut Sprite,
         &mut AnimationIndices,
     )>,
+    game_config: Res<GameConfig>,
 ) {
+    let player_speed = game_config.player.speed;
     for (player_no, mut velocity, mut direction, mut sprite, mut indices) in &mut query {
         if player_no.0 == 1
             && keyboard_input.any_just_released([
@@ -288,22 +309,22 @@ pub fn players_move(
         if (player_no.0 == 1 && keyboard_input.pressed(KeyCode::KeyW))
             || (player_no.0 == 2 && keyboard_input.pressed(KeyCode::ArrowUp))
         {
-            velocity.linvel = Vec2::new(0.0, PLAYER_SPEED);
+            velocity.linvel = Vec2::new(0.0, player_speed);
             *direction = common::Direction::Up;
         } else if (player_no.0 == 1 && keyboard_input.pressed(KeyCode::KeyS))
             || (player_no.0 == 2 && keyboard_input.pressed(KeyCode::ArrowDown))
         {
-            velocity.linvel = Vec2::new(0.0, -PLAYER_SPEED);
+            velocity.linvel = Vec2::new(0.0, -player_speed);
             *direction = common::Direction::Down;
         } else if (player_no.0 == 1 && keyboard_input.pressed(KeyCode::KeyA))
             || (player_no.0 == 2 && keyboard_input.pressed(KeyCode::ArrowLeft))
         {
-            velocity.linvel = Vec2::new(-PLAYER_SPEED, 0.0);
+            velocity.linvel = Vec2::new(-player_speed, 0.0);
             *direction = common::Direction::Left;
         } else if (player_no.0 == 1 && keyboard_input.pressed(KeyCode::KeyD))
             || (player_no.0 == 2 && keyboard_input.pressed(KeyCode::ArrowRight))
         {
-            velocity.linvel = Vec2::new(PLAYER_SPEED, 0.0);
+            velocity.linvel = Vec2::new(player_speed, 0.0);
             *direction = common::Direction::Right;
         } else {
             continue;
@@ -329,7 +350,11 @@ pub fn players_move(
                 };
             }
         }
-        sprite.texture_atlas.as_mut().unwrap().index = indices.first;
+        if let Some(atlas) = sprite.texture_atlas.as_mut() {
+            atlas.index = indices.first;
+        } else {
+            warn!("Player sprite has no texture atlas, cannot update animation");
+        }
     }
 }
 
@@ -497,7 +522,75 @@ pub fn cleanup_born(
     }
 }
 
-pub fn reset_player_lives(mut player_lives: ResMut<PlayerLives>) {
-    player_lives.player1 = 3;
-    player_lives.player2 = 3;
+pub fn reset_player_lives(
+    mut player_lives: ResMut<PlayerLives>,
+    game_config: Res<crate::config::GameConfig>,
+) {
+    let initial_lives = game_config.player.initial_lives;
+    player_lives.player1 = initial_lives;
+    player_lives.player2 = initial_lives;
+}
+
+/// Plugin for player-related systems and resources
+pub struct PlayerPlugin;
+
+impl Plugin for PlayerPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_type::<PlayerNo>()
+            .add_message::<SpawnPlayerEvent>()
+            .init_resource::<PlayerLives>()
+            .add_systems(
+                OnEnter(AppState::StartMenu),
+                (cleanup_players, cleanup_born, reset_player_lives),
+            )
+            .add_systems(
+                Update,
+                auto_spawn_players
+                    .in_set(crate::common::GameplaySet::Spawning)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                players_move
+                    .in_set(crate::common::GameplaySet::Movement)
+                    .after(crate::common::GameplaySet::Spawning)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                players_attack
+                    .in_set(crate::common::GameplaySet::Combat)
+                    .after(crate::common::GameplaySet::Movement)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                (animate_players, animate_shield, remove_shield)
+                    .chain()
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .after(crate::common::GameplaySet::Effects)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                animate_born
+                    .in_set(crate::common::GameplaySet::Effects)
+                    .after(crate::common::GameplaySet::Collision)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                animate_born
+                    .in_set(crate::common::GameplaySet::Effects)
+                    .run_if(in_state(AppState::GameOver)),
+            )
+            // Animation systems for GameOver state
+            .add_systems(
+                Update,
+                (animate_players, animate_shield)
+                    .chain()
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .run_if(in_state(AppState::GameOver)),
+            );
+    }
 }

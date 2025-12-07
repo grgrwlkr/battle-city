@@ -1,8 +1,8 @@
 use crate::{
     common::{
-        AnimationIndices, AnimationTimer, AppState, HomeDyingEvent, ENEMIES_PER_LEVEL,
-        LEVEL_COLUMNS, LEVEL_ROWS, MAX_LEVELS, SPRITE_TREE_ORDER, TILE_SIZE,
+        AnimationIndices, AnimationTimer, AppState, HomeDyingEvent, TILE_SIZE,
     },
+    config::GameConfig,
     enemy::{Enemy, LevelSpawnedEnemies},
     player::PlayerNo,
 };
@@ -10,11 +10,13 @@ use bevy::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-pub const LEVEL_TRANSLATION_OFFSET: Vec3 = Vec3::new(
-    -LEVEL_COLUMNS as f32 / 2.0 * TILE_SIZE,
-    -LEVEL_ROWS as f32 / 2. * TILE_SIZE,
-    0.0,
-);
+pub fn level_translation_offset(game_config: &GameConfig) -> Vec3 {
+    Vec3::new(
+        -game_config.level.columns as f32 / 2.0 * game_config.level.tile_size,
+        -game_config.level.rows as f32 / 2.0 * game_config.level.tile_size,
+        0.0,
+    )
+}
 
 // Level map elements
 #[derive(Component, Clone, PartialEq, Eq, Debug, Default)]
@@ -74,7 +76,6 @@ pub struct IronWallBundle {
     #[sprite_sheet("textures/map.bmp", 32, 32, 7, 1, 0, 0, 1)]
     sprite_sheet: Sprite,
 }
-#[allow(dead_code)]
 #[derive(Bundle, LdtkEntity, Default)]
 pub struct TreeBundle {
     #[from_entity_instance]
@@ -160,6 +161,7 @@ pub fn setup_levels(
     asset_server: Res<AssetServer>,
     q_ldtk_world: Query<(), With<LdtkProjectHandle>>,
     level_selection: Res<LevelSelection>,
+    game_config: Res<GameConfig>,
 ) {
     if q_ldtk_world.iter().len() > 0 {
         // No need to reload LDTK when entering from Paused state
@@ -171,9 +173,10 @@ pub fn setup_levels(
     } else {
         info!("Loading level from LDTK file");
     }
+    let offset = level_translation_offset(&game_config);
     commands.spawn(LdtkWorldBundle {
         ldtk_handle: asset_server.load("levels.ldtk").into(),
-        transform: Transform::from_translation(Vec3::ZERO + LEVEL_TRANSLATION_OFFSET),
+        transform: Transform::from_translation(Vec3::ZERO + offset),
         ..Default::default()
     });
 }
@@ -183,20 +186,25 @@ pub fn spawn_ldtk_entity(
     entity_query: Query<(Entity, &Transform, &EntityInstance), Added<EntityInstance>>,
     mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     asset_server: Res<AssetServer>,
+    game_config: Res<GameConfig>,
 ) {
     let mut spawned_count = 0;
     for (_entity, transform, entity_instance) in entity_query.iter() {
         if entity_instance.identifier == *"Tree" {
-            trace!("Spawning LDTK entity: Tree at position ({:.1}, {:.1})", 
-                   transform.translation.x, transform.translation.y);
+            trace!(
+                "Spawning LDTK entity: Tree at position ({:.1}, {:.1})",
+                transform.translation.x,
+                transform.translation.y
+            );
             spawned_count += 1;
             let map_texture_handle = asset_server.load("textures/map.bmp");
             let map_texture_atlas =
                 TextureAtlasLayout::from_grid(UVec2::new(32, 32), 7, 1, None, None);
             let map_texture_atlas_handle = texture_atlases.add(map_texture_atlas);
 
-            let mut translation = transform.translation + LEVEL_TRANSLATION_OFFSET;
-            translation.z = SPRITE_TREE_ORDER;
+            let offset = level_translation_offset(&game_config);
+            let mut translation = transform.translation + offset;
+            translation.z = game_config.sprite_order.tree;
             commands.spawn((
                 LevelItem::Tree,
                 Sprite {
@@ -253,13 +261,18 @@ pub fn auto_switch_level(
     mut level_spawned_enemies: ResMut<LevelSpawnedEnemies>,
     mut app_state: ResMut<NextState<AppState>>,
     mut scheduled: ResMut<crate::common::ScheduledDespawn>,
+    game_config: Res<GameConfig>,
 ) {
     // Switch to next level when maximum enemies spawned and all enemies are destroyed
-    if level_spawned_enemies.0 == ENEMIES_PER_LEVEL && q_enemies.iter().len() == 0 {
+    let enemies_per_level = game_config.enemy.enemies_per_level;
+    if level_spawned_enemies.0 == enemies_per_level && q_enemies.iter().len() == 0 {
         if let LevelSelection::Indices(LevelIndices { level, .. }) = *level_selection {
-            if level as i32 == MAX_LEVELS - 1 {
+            if level as i32 == game_config.level.max_levels - 1 {
                 // TODO: Game victory
-                info!("Level {} completed! All enemies destroyed. Game victory!", level + 1);
+                info!(
+                    "Level {} completed! All enemies destroyed. Game victory!",
+                    level + 1
+                );
                 app_state.set(AppState::StartMenu);
             } else {
                 // Next level
@@ -267,7 +280,7 @@ pub fn auto_switch_level(
                 let item_count = q_level_items.iter().count();
                 info!(
                     "Level {} completed! All {} enemies destroyed. Switching to level {}, cleaning up {} players and {} level items",
-                    level + 1, ENEMIES_PER_LEVEL, level + 2, player_count, item_count
+                    level + 1, enemies_per_level, level + 2, player_count, item_count
                 );
                 *level_selection = LevelSelection::index(level + 1);
                 level_spawned_enemies.0 = 0;
@@ -281,7 +294,10 @@ pub fn auto_switch_level(
                 }
                 for level_item in &q_level_items {
                     if scheduled.0.insert(level_item) {
-                        trace!("Despawning level item entity {:?} for level transition", level_item);
+                        trace!(
+                            "Despawning level item entity {:?} for level transition",
+                            level_item
+                        );
                         commands.entity(level_item).despawn();
                     }
                 }
@@ -304,7 +320,11 @@ pub fn animate_home(
                     "Home base destroyed! Changing sprite and triggering game over. Position: ({:.1}, {:.1})",
                     transform.translation.x, transform.translation.y
                 );
-                sprite.texture_atlas.as_mut().unwrap().index = 6;
+                if let Some(atlas) = sprite.texture_atlas.as_mut() {
+                    atlas.index = 6;
+                } else {
+                    error!("Home sprite has no texture atlas, cannot update animation");
+                }
                 app_state.set(AppState::GameOver);
             }
         }
@@ -347,4 +367,57 @@ pub fn cleanup_ldtk_world(
 
 pub fn reset_level_selection(mut level_selection: ResMut<LevelSelection>) {
     *level_selection = LevelSelection::index(0);
+}
+
+/// Plugin for level-related systems and resources
+pub struct LevelPlugin;
+
+impl Plugin for LevelPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_ldtk_entity::<StoneWallBundle>("StoneWall")
+            .register_ldtk_entity::<IronWallBundle>("IronWall")
+            .register_ldtk_entity::<WaterBundle>("Water")
+            .register_ldtk_entity::<HomeBundle>("Home")
+            .register_ldtk_entity::<Player1MarkerBundle>("Player1")
+            .register_ldtk_entity::<Player2MarkerBundle>("Player2")
+            .register_ldtk_entity::<EnemiesMarkerBundle>("Enemies")
+            .add_systems(
+                OnEnter(AppState::StartMenu),
+                (
+                    cleanup_level_items,
+                    cleanup_ldtk_world,
+                    reset_level_selection,
+                ),
+            )
+            .add_systems(OnEnter(AppState::Playing), setup_levels)
+            .add_systems(
+                Update,
+                spawn_ldtk_entity
+                    .in_set(crate::common::GameplaySet::Spawning)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                auto_switch_level
+                    .in_set(crate::common::GameplaySet::LevelManagement)
+                    .after(crate::common::GameplaySet::Collision)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                (animate_water, animate_home)
+                    .chain()
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .after(crate::common::GameplaySet::Effects)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            // Animation systems for GameOver state
+            .add_systems(
+                Update,
+                (animate_water, animate_home)
+                    .chain()
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .run_if(in_state(AppState::GameOver)),
+            );
+    }
 }

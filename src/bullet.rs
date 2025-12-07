@@ -2,12 +2,12 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::area::*;
-use crate::common::{Direction, *};
+use crate::common::{AppState, Direction, *};
+use crate::config::GameConfig;
 use crate::enemy::Enemy;
 use crate::level::LevelItem;
 use crate::player::{PlayerLives, PlayerNo, Shield};
 
-pub const BULLET_SPEED: f32 = 300.0;
 
 #[derive(Component, PartialEq, Eq, Debug)]
 pub enum Bullet {
@@ -61,13 +61,15 @@ pub fn setup_explosion_assets(mut commands: Commands, asset_server: Res<AssetSer
 pub fn move_bullet(
     mut q_bullet: Query<(&mut Transform, &Direction), With<Bullet>>,
     time: Res<Time>,
+    game_config: Res<GameConfig>,
 ) {
+    let bullet_speed = game_config.bullet.speed;
     for (mut bullet_transform, direction) in &mut q_bullet {
         match direction {
-            Direction::Left => bullet_transform.translation.x -= BULLET_SPEED * time.delta_secs(),
-            Direction::Right => bullet_transform.translation.x += BULLET_SPEED * time.delta_secs(),
-            Direction::Up => bullet_transform.translation.y += BULLET_SPEED * time.delta_secs(),
-            Direction::Down => bullet_transform.translation.y -= BULLET_SPEED * time.delta_secs(),
+            Direction::Left => bullet_transform.translation.x -= bullet_speed * time.delta_secs(),
+            Direction::Right => bullet_transform.translation.x += bullet_speed * time.delta_secs(),
+            Direction::Up => bullet_transform.translation.y += bullet_speed * time.delta_secs(),
+            Direction::Down => bullet_transform.translation.y -= bullet_speed * time.delta_secs(),
         }
     }
 }
@@ -111,23 +113,45 @@ pub fn handle_bullet_collision(
                     bullet_entity, entity1, entity2
                 );
 
-                let (_, bullet, bullet_transform) = q_bullets.get(bullet_entity).unwrap();
+                let Ok((_, bullet, bullet_transform)) = q_bullets.get(bullet_entity) else {
+                    warn!(
+                        "Bullet entity {:?} not found in query, skipping collision",
+                        bullet_entity
+                    );
+                    continue;
+                };
 
                 info!(
                     "{:?} bullet hit entity {:?} at position ({:.1}, {:.1})",
-                    bullet, other_entity, bullet_transform.translation.x, bullet_transform.translation.y
+                    bullet,
+                    other_entity,
+                    bullet_transform.translation.x,
+                    bullet_transform.translation.y
                 );
                 // Other object
                 if q_level_items.contains(other_entity) {
-                    let (level_item, level_item_transform, _) =
-                        q_level_items.get(other_entity).unwrap();
-                    info!("Bullet hit level item: {:?} at position ({:.1}, {:.1})", 
-                          level_item, level_item_transform.translation().x, level_item_transform.translation().y);
+                    let Ok((level_item, level_item_transform, _)) = q_level_items.get(other_entity)
+                    else {
+                        warn!(
+                            "Level item entity {:?} not found in query, skipping",
+                            other_entity
+                        );
+                        continue;
+                    };
+                    info!(
+                        "Bullet hit level item: {:?} at position ({:.1}, {:.1})",
+                        level_item,
+                        level_item_transform.translation().x,
+                        level_item_transform.translation().y
+                    );
                     match level_item {
                         LevelItem::Home => {
                             // Game Over
-                            error!("Game over: Home destroyed by bullet at position ({:.1}, {:.1})", 
-                                   level_item_transform.translation().x, level_item_transform.translation().y);
+                            error!(
+                                "Game over: Home destroyed by bullet at position ({:.1}, {:.1})",
+                                level_item_transform.translation().x,
+                                level_item_transform.translation().y
+                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -142,8 +166,10 @@ pub fn handle_bullet_collision(
                             home_dying_ew.write_default();
                         }
                         LevelItem::StoneWall => {
-                            info!("Stone wall destroyed at position ({:.1}, {:.1})", 
-                                  bullet_transform.translation.x, bullet_transform.translation.y);
+                            info!(
+                                "Stone wall destroyed at position ({:.1}, {:.1})",
+                                bullet_transform.translation.x, bullet_transform.translation.y
+                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -160,8 +186,10 @@ pub fn handle_bullet_collision(
                             });
                         }
                         LevelItem::IronWall => {
-                            debug!("Bullet bounced off iron wall at position ({:.1}, {:.1})", 
-                                   bullet_transform.translation.x, bullet_transform.translation.y);
+                            debug!(
+                                "Bullet bounced off iron wall at position ({:.1}, {:.1})",
+                                bullet_transform.translation.x, bullet_transform.translation.y
+                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -195,7 +223,13 @@ pub fn handle_bullet_collision(
                 }
 
                 if *bullet == Bullet::Player && q_enemies.contains(other_entity) {
-                    let enemy_transform = q_enemies.get(other_entity).unwrap();
+                    let Ok(enemy_transform) = q_enemies.get(other_entity) else {
+                        warn!(
+                            "Enemy entity {:?} not found in query, skipping",
+                            other_entity
+                        );
+                        continue;
+                    };
                     info!(
                         "Player bullet destroyed enemy at position ({:.1}, {:.1})",
                         enemy_transform.translation.x, enemy_transform.translation.y
@@ -217,7 +251,14 @@ pub fn handle_bullet_collision(
                 }
 
                 if *bullet == Bullet::Enemy && q_players.contains(other_entity) {
-                    let (player_transform, player_children) = q_players.get(other_entity).unwrap();
+                    let Ok((player_transform, player_children)) = q_players.get(other_entity)
+                    else {
+                        warn!(
+                            "Player entity {:?} not found in query, skipping",
+                            other_entity
+                        );
+                        continue;
+                    };
                     let mut player_has_shield = false;
                     for child in player_children.iter() {
                         if q_shields.contains(child) {
@@ -334,7 +375,13 @@ pub fn spawn_explosion(
         };
         big_explosion_texture_atlas_builder.add_texture(Some(handle.id()), texture);
     }
-    let big_explosion_texture_atlas = big_explosion_texture_atlas_builder.build().unwrap();
+    let big_explosion_texture_atlas = match big_explosion_texture_atlas_builder.build() {
+        Ok(atlas) => atlas,
+        Err(e) => {
+            error!("Failed to build big explosion texture atlas: {:?}", e);
+            return;
+        }
+    };
     let big_explosion_atlas_layout_handle = atlas_layouts.add(big_explosion_texture_atlas.0);
     let big_explosion_texture_handle = textures.add(big_explosion_texture_atlas.2);
 
@@ -349,14 +396,23 @@ pub fn spawn_explosion(
         };
         bullet_explosion_texture_atlas_builder.add_texture(Some(handle.id()), texture);
     }
-    let bullet_explosion_texture_atlas = bullet_explosion_texture_atlas_builder.build().unwrap();
+    let bullet_explosion_texture_atlas = match bullet_explosion_texture_atlas_builder.build() {
+        Ok(atlas) => atlas,
+        Err(e) => {
+            error!("Failed to build bullet explosion texture atlas: {:?}", e);
+            return;
+        }
+    };
     let bullet_explosion_atlas_layout_handle = atlas_layouts.add(bullet_explosion_texture_atlas.0);
     let bullet_explosion_texture_handle = textures.add(bullet_explosion_texture_atlas.2);
 
     for explosion in explosion_er.read() {
         trace!(
             "Spawning {:?} explosion at position ({:.1}, {:.1}, {:.1})",
-            explosion.explosion_type, explosion.pos.x, explosion.pos.y, explosion.pos.z
+            explosion.explosion_type,
+            explosion.pos.x,
+            explosion.pos.y,
+            explosion.pos.z
         );
         commands.spawn((
             Explosion,
@@ -416,7 +472,10 @@ pub fn animate_explosion(
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index += 1;
                 if atlas.index > indices.last && scheduled.0.insert(entity) {
-                    trace!("Explosion animation completed, despawning explosion entity {:?}", entity);
+                    trace!(
+                        "Explosion animation completed, despawning explosion entity {:?}",
+                        entity
+                    );
                     commands.entity(entity).despawn();
                 }
             }
@@ -455,5 +514,59 @@ pub fn cleanup_explosions(
             trace!("Despawning explosion entity {:?}", entity);
             commands.entity(entity).despawn();
         }
+    }
+}
+
+/// Plugin for bullet-related systems and resources
+pub struct BulletPlugin;
+
+impl Plugin for BulletPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_message::<ExplosionEvent>()
+            .add_systems(
+                OnEnter(AppState::StartMenu),
+                (cleanup_bullets, cleanup_explosions),
+            )
+            .add_systems(
+                Update,
+                move_bullet
+                    .in_set(crate::common::GameplaySet::BulletMovement)
+                    .after(crate::common::GameplaySet::Combat)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                handle_bullet_collision
+                    .in_set(crate::common::GameplaySet::Collision)
+                    .after(crate::common::GameplaySet::BulletMovement)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                spawn_explosion
+                    .in_set(crate::common::GameplaySet::Effects)
+                    .after(crate::common::GameplaySet::Collision)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
+                spawn_explosion
+                    .in_set(crate::common::GameplaySet::Effects)
+                    .run_if(in_state(AppState::GameOver)),
+            )
+            .add_systems(
+                Update,
+                animate_explosion
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .after(crate::common::GameplaySet::Effects)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            // Animation systems for GameOver state
+            .add_systems(
+                Update,
+                animate_explosion
+                    .in_set(crate::common::GameplaySet::Animation)
+                    .run_if(in_state(AppState::GameOver)),
+            );
     }
 }

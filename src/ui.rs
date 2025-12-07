@@ -1,4 +1,5 @@
-use crate::common::{AppState, GameSounds, MultiplayerMode, SPRITE_GAME_OVER_ORDER, TANK_SIZE};
+use crate::common::{AppState, GameSounds, MultiplayerMode};
+use crate::config::GameConfig;
 use bevy::prelude::*;
 use std::time::Duration;
 
@@ -14,10 +15,12 @@ pub fn setup_start_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    game_config: Res<GameConfig>,
 ) {
+    let tank_size = game_config.player.tank_size;
     let player1_texture_handle = asset_server.load("textures/tank1.bmp");
     let player1_texture_atlas =
-        TextureAtlasLayout::from_grid(UVec2::new(TANK_SIZE, TANK_SIZE), 8, 4, None, None);
+        TextureAtlasLayout::from_grid(UVec2::new(tank_size, tank_size), 8, 4, None, None);
     let player1_atlas_layout_handle = atlas_layouts.add(player1_texture_atlas);
 
     commands
@@ -67,6 +70,7 @@ pub fn setup_game_over(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     game_sounds: Res<GameSounds>,
+    game_config: Res<GameConfig>,
 ) {
     let game_over_texture = asset_server.load("textures/game_over.bmp");
     commands.spawn((
@@ -74,7 +78,7 @@ pub fn setup_game_over(
             image: game_over_texture,
             ..default()
         },
-        Transform::from_translation(Vec3::new(0., -400., SPRITE_GAME_OVER_ORDER)),
+        Transform::from_translation(Vec3::new(0., -400., game_config.sprite_order.game_over)),
         OnGameOverScreen,
     ));
     commands.spawn((
@@ -94,7 +98,10 @@ pub fn animate_game_over(
         if transform.translation.y < 0. {
             transform.translation.y += time.delta_secs() * 150.;
             *stop_secs = 0.0;
-            trace!("Game over animation: moving image up, current Y: {:.1}", transform.translation.y);
+            trace!(
+                "Game over animation: moving image up, current Y: {:.1}",
+                transform.translation.y
+            );
         } else {
             // After 1 second pause, switch to Start Menu
             *stop_secs += time.delta_secs();
@@ -112,10 +119,7 @@ pub fn start_game(
     multiplayer_mode: Res<MultiplayerMode>,
 ) {
     if keyboard_input.any_just_pressed([KeyCode::Enter, KeyCode::Space]) {
-        info!(
-            "Starting game in {:?} mode",
-            multiplayer_mode
-        );
+        info!("Starting game in {:?} mode", multiplayer_mode);
         app_state.set(AppState::Playing);
     }
 }
@@ -190,6 +194,69 @@ pub fn despawn_screen<T: Component>(
         if scheduled.0.insert(entity) {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+/// Plugin for UI-related systems and resources
+pub struct UiPlugin;
+
+impl Plugin for UiPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            OnEnter(AppState::StartMenu),
+            (
+                setup_start_menu,
+                reset_multiplayer_mode,
+                |state: Res<State<AppState>>| {
+                    info!("Entered state: {:?}", state.get());
+                },
+            ),
+        )
+        .add_systems(
+            OnExit(AppState::StartMenu),
+            (despawn_screen::<OnStartMenuScreen>,),
+        )
+        .add_systems(
+            OnEnter(AppState::Playing),
+            (|state: Res<State<AppState>>| {
+                info!("Entered state: {:?}", state.get());
+            },),
+        )
+        .add_systems(
+            OnEnter(AppState::GameOver),
+            (setup_game_over, |state: Res<State<AppState>>| {
+                warn!("Entered state: {:?} - Game Over!", state.get());
+            }),
+        )
+        .add_systems(
+            OnExit(AppState::GameOver),
+            (despawn_screen::<OnGameOverScreen>,),
+        )
+        .add_systems(
+            Update,
+            (start_game, switch_multiplayer_mode)
+                .chain()
+                .in_set(crate::common::GameplaySet::Input)
+                .run_if(in_state(AppState::StartMenu)),
+        )
+        .add_systems(
+            Update,
+            pause_game
+                .in_set(crate::common::GameplaySet::Ui)
+                .run_if(in_state(AppState::Playing)),
+        )
+        .add_systems(
+            Update,
+            unpause_game
+                .in_set(crate::common::GameplaySet::Ui)
+                .run_if(in_state(AppState::Paused)),
+        )
+        .add_systems(
+            Update,
+            animate_game_over
+                .in_set(crate::common::GameplaySet::Animation)
+                .run_if(in_state(AppState::GameOver)),
+        );
     }
 }
 
