@@ -94,10 +94,12 @@ pub fn animate_game_over(
         if transform.translation.y < 0. {
             transform.translation.y += time.delta_secs() * 150.;
             *stop_secs = 0.0;
+            trace!("Game over animation: moving image up, current Y: {:.1}", transform.translation.y);
         } else {
             // After 1 second pause, switch to Start Menu
             *stop_secs += time.delta_secs();
             if *stop_secs > 1.0 {
+                info!("Game over animation completed, returning to start menu");
                 app_state.set(AppState::StartMenu);
             }
         }
@@ -107,9 +109,13 @@ pub fn animate_game_over(
 pub fn start_game(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut app_state: ResMut<NextState<AppState>>,
+    multiplayer_mode: Res<MultiplayerMode>,
 ) {
     if keyboard_input.any_just_pressed([KeyCode::Enter, KeyCode::Space]) {
-        info!("Switch app state to playing");
+        info!(
+            "Starting game in {:?} mode",
+            multiplayer_mode
+        );
         app_state.set(AppState::Playing);
     }
 }
@@ -126,9 +132,11 @@ pub fn switch_multiplayer_mode(
             if *multiplayer_mode == MultiplayerMode::SinglePlayer {
                 node.top = Val::Px(440.);
                 *multiplayer_mode = MultiplayerMode::TwoPlayers;
+                info!("Multiplayer mode switched to: TwoPlayers");
             } else if *multiplayer_mode == MultiplayerMode::TwoPlayers {
                 node.top = Val::Px(412.);
                 *multiplayer_mode = MultiplayerMode::SinglePlayer;
+                info!("Multiplayer mode switched to: SinglePlayer");
             }
             commands.spawn((
                 AudioPlayer(game_sounds.mode_switch.clone()),

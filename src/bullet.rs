@@ -9,7 +9,7 @@ use crate::player::{PlayerLives, PlayerNo, Shield};
 
 pub const BULLET_SPEED: f32 = 300.0;
 
-#[derive(Component, PartialEq, Eq)]
+#[derive(Component, PartialEq, Eq, Debug)]
 pub enum Bullet {
     Player,
     Enemy,
@@ -113,16 +113,21 @@ pub fn handle_bullet_collision(
 
                 let (_, bullet, bullet_transform) = q_bullets.get(bullet_entity).unwrap();
 
-                info!("Bullet hit something");
+                info!(
+                    "{:?} bullet hit entity {:?} at position ({:.1}, {:.1})",
+                    bullet, other_entity, bullet_transform.translation.x, bullet_transform.translation.y
+                );
                 // Other object
                 if q_level_items.contains(other_entity) {
                     let (level_item, level_item_transform, _) =
                         q_level_items.get(other_entity).unwrap();
-                    debug!("Bullet hit level item: {:?}", level_item);
+                    info!("Bullet hit level item: {:?} at position ({:.1}, {:.1})", 
+                          level_item, level_item_transform.translation().x, level_item_transform.translation().y);
                     match level_item {
                         LevelItem::Home => {
                             // Game Over
-                            warn!("Game over: Home destroyed");
+                            error!("Game over: Home destroyed by bullet at position ({:.1}, {:.1})", 
+                                   level_item_transform.translation().x, level_item_transform.translation().y);
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -137,6 +142,8 @@ pub fn handle_bullet_collision(
                             home_dying_ew.write_default();
                         }
                         LevelItem::StoneWall => {
+                            info!("Stone wall destroyed at position ({:.1}, {:.1})", 
+                                  bullet_transform.translation.x, bullet_transform.translation.y);
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -153,6 +160,8 @@ pub fn handle_bullet_collision(
                             });
                         }
                         LevelItem::IronWall => {
+                            debug!("Bullet bounced off iron wall at position ({:.1}, {:.1})", 
+                                   bullet_transform.translation.x, bullet_transform.translation.y);
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -170,7 +179,8 @@ pub fn handle_bullet_collision(
                 }
 
                 if q_area_wall.contains(other_entity) {
-                    info!("Bullet hit area wall");
+                    debug!("Bullet hit area boundary wall at position ({:.1}, {:.1}), destroying bullet", 
+                           bullet_transform.translation.x, bullet_transform.translation.y);
                     if scheduled.0.insert(bullet_entity) {
                         commands.entity(bullet_entity).despawn();
                     }
@@ -185,8 +195,11 @@ pub fn handle_bullet_collision(
                 }
 
                 if *bullet == Bullet::Player && q_enemies.contains(other_entity) {
-                    info!("Player bullet hit enemy");
                     let enemy_transform = q_enemies.get(other_entity).unwrap();
+                    info!(
+                        "Player bullet destroyed enemy at position ({:.1}, {:.1})",
+                        enemy_transform.translation.x, enemy_transform.translation.y
+                    );
                     if scheduled.0.insert(bullet_entity) {
                         commands.entity(bullet_entity).despawn();
                     }
@@ -204,7 +217,6 @@ pub fn handle_bullet_collision(
                 }
 
                 if *bullet == Bullet::Enemy && q_players.contains(other_entity) {
-                    info!("Enemy bullet hit player");
                     let (player_transform, player_children) = q_players.get(other_entity).unwrap();
                     let mut player_has_shield = false;
                     for child in player_children.iter() {
@@ -219,7 +231,10 @@ pub fn handle_bullet_collision(
                     }
 
                     if player_has_shield {
-                        info!("Player has shield");
+                        info!(
+                            "Enemy bullet blocked by player shield at position ({:.1}, {:.1})",
+                            player_transform.translation.x, player_transform.translation.y
+                        );
                         explosion_ew.write(ExplosionEvent {
                             pos: Vec3::new(
                                 player_transform.translation.x,
@@ -229,6 +244,11 @@ pub fn handle_bullet_collision(
                             explosion_type: ExplosionType::BulletExplosion,
                         });
                     } else {
+                        warn!(
+                            "Enemy bullet hit player at position ({:.1}, {:.1}), destroying player. Lives remaining: P1={}, P2={}",
+                            player_transform.translation.x, player_transform.translation.y,
+                            player_lives.player1, player_lives.player2
+                        );
                         if scheduled.0.insert(other_entity) {
                             commands.entity(other_entity).despawn();
                         }
@@ -241,11 +261,13 @@ pub fn handle_bullet_collision(
                             explosion_type: ExplosionType::BigExplosion,
                         });
                         if player_lives.player1 <= 0 && player_lives.player2 <= 0 {
+                            error!("Game over: All players have no lives remaining");
                             app_state.set(AppState::GameOver);
                         }
                         if player_lives.player1 <= 0
                             && *multiplayer_mode == MultiplayerMode::SinglePlayer
                         {
+                            error!("Game over: Single player has no lives remaining");
                             app_state.set(AppState::GameOver);
                         }
                     }
@@ -332,6 +354,10 @@ pub fn spawn_explosion(
     let bullet_explosion_texture_handle = textures.add(bullet_explosion_texture_atlas.2);
 
     for explosion in explosion_er.read() {
+        trace!(
+            "Spawning {:?} explosion at position ({:.1}, {:.1}, {:.1})",
+            explosion.explosion_type, explosion.pos.x, explosion.pos.y, explosion.pos.z
+        );
         commands.spawn((
             Explosion,
             Sprite {
@@ -390,6 +416,7 @@ pub fn animate_explosion(
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index += 1;
                 if atlas.index > indices.last && scheduled.0.insert(entity) {
+                    trace!("Explosion animation completed, despawning explosion entity {:?}", entity);
                     commands.entity(entity).despawn();
                 }
             }
@@ -402,8 +429,13 @@ pub fn cleanup_bullets(
     q_bullets: Query<Entity, With<Bullet>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
+    let bullet_count = q_bullets.iter().count();
+    if bullet_count > 0 {
+        debug!("Cleaning up {} bullet entities", bullet_count);
+    }
     for entity in &q_bullets {
         if scheduled.0.insert(entity) {
+            trace!("Despawning bullet entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }
@@ -414,8 +446,13 @@ pub fn cleanup_explosions(
     q_explosions: Query<Entity, With<Explosion>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
+    let explosion_count = q_explosions.iter().count();
+    if explosion_count > 0 {
+        debug!("Cleaning up {} explosion entities", explosion_count);
+    }
     for entity in &q_explosions {
         if scheduled.0.insert(entity) {
+            trace!("Despawning explosion entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }

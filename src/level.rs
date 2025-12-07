@@ -159,10 +159,17 @@ pub fn setup_levels(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     q_ldtk_world: Query<(), With<LdtkProjectHandle>>,
+    level_selection: Res<LevelSelection>,
 ) {
     if q_ldtk_world.iter().len() > 0 {
         // No need to reload LDTK when entering from Paused state
+        trace!("LDTK world already loaded, skipping setup");
         return;
+    }
+    if let LevelSelection::Indices(LevelIndices { level, .. }) = *level_selection {
+        info!("Loading level {} from LDTK file", level + 1);
+    } else {
+        info!("Loading level from LDTK file");
     }
     commands.spawn(LdtkWorldBundle {
         ldtk_handle: asset_server.load("levels.ldtk").into(),
@@ -177,8 +184,12 @@ pub fn spawn_ldtk_entity(
     mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     asset_server: Res<AssetServer>,
 ) {
+    let mut spawned_count = 0;
     for (_entity, transform, entity_instance) in entity_query.iter() {
         if entity_instance.identifier == *"Tree" {
+            trace!("Spawning LDTK entity: Tree at position ({:.1}, {:.1})", 
+                   transform.translation.x, transform.translation.y);
+            spawned_count += 1;
             let map_texture_handle = asset_server.load("textures/map.bmp");
             let map_texture_atlas =
                 TextureAtlasLayout::from_grid(UVec2::new(32, 32), 7, 1, None, None);
@@ -199,6 +210,9 @@ pub fn spawn_ldtk_entity(
                 Transform::from_translation(translation),
             ));
         }
+    }
+    if spawned_count > 0 {
+        debug!("Spawned {} Tree entities from LDTK", spawned_count);
     }
 }
 
@@ -245,22 +259,29 @@ pub fn auto_switch_level(
         if let LevelSelection::Indices(LevelIndices { level, .. }) = *level_selection {
             if level as i32 == MAX_LEVELS - 1 {
                 // TODO: Game victory
-                info!("win the game!");
+                info!("Level {} completed! All enemies destroyed. Game victory!", level + 1);
                 app_state.set(AppState::StartMenu);
             } else {
                 // Next level
-                info!("Switch to next level, index={}", level + 1);
+                let player_count = q_players.iter().count();
+                let item_count = q_level_items.iter().count();
+                info!(
+                    "Level {} completed! All {} enemies destroyed. Switching to level {}, cleaning up {} players and {} level items",
+                    level + 1, ENEMIES_PER_LEVEL, level + 2, player_count, item_count
+                );
                 *level_selection = LevelSelection::index(level + 1);
                 level_spawned_enemies.0 = 0;
 
                 // Respawn players
                 for player in &q_players {
                     if scheduled.0.insert(player) {
+                        trace!("Despawning player entity {:?} for level transition", player);
                         commands.entity(player).despawn();
                     }
                 }
                 for level_item in &q_level_items {
                     if scheduled.0.insert(level_item) {
+                        trace!("Despawning level item entity {:?} for level transition", level_item);
                         commands.entity(level_item).despawn();
                     }
                 }
@@ -273,12 +294,16 @@ pub fn auto_switch_level(
 
 pub fn animate_home(
     mut home_dying_er: MessageReader<HomeDyingEvent>,
-    mut q_level_items: Query<(&LevelItem, &mut Sprite)>,
+    mut q_level_items: Query<(&LevelItem, &mut Sprite, &Transform)>,
     mut app_state: ResMut<NextState<AppState>>,
 ) {
     for _ in home_dying_er.read() {
-        for (level_item, mut sprite) in &mut q_level_items {
+        for (level_item, mut sprite, transform) in &mut q_level_items {
             if *level_item == LevelItem::Home {
+                warn!(
+                    "Home base destroyed! Changing sprite and triggering game over. Position: ({:.1}, {:.1})",
+                    transform.translation.x, transform.translation.y
+                );
                 sprite.texture_atlas.as_mut().unwrap().index = 6;
                 app_state.set(AppState::GameOver);
             }
@@ -291,8 +316,13 @@ pub fn cleanup_level_items(
     q_level_items: Query<Entity, With<LevelItem>>,
     mut scheduled: ResMut<crate::common::ScheduledDespawn>,
 ) {
+    let item_count = q_level_items.iter().count();
+    if item_count > 0 {
+        debug!("Cleaning up {} level item entities", item_count);
+    }
     for entity in &q_level_items {
         if scheduled.0.insert(entity) {
+            trace!("Despawning level item entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }
@@ -303,8 +333,13 @@ pub fn cleanup_ldtk_world(
     q_ldtk_world: Query<Entity, With<LdtkProjectHandle>>,
     mut scheduled: ResMut<crate::common::ScheduledDespawn>,
 ) {
+    let world_count = q_ldtk_world.iter().count();
+    if world_count > 0 {
+        info!("Cleaning up {} LDTK world entities", world_count);
+    }
     for entity in &q_ldtk_world {
         if scheduled.0.insert(entity) {
+            trace!("Despawning LDTK world entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }

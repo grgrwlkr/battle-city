@@ -63,6 +63,11 @@ pub fn auto_spawn_players(
     if !player1_exists {
         for player1_marker in &q_player1_marker {
             if !*spawning_player1 && player_lives.player1 > 0 {
+                info!(
+                    "Starting spawn animation for Player 1 at position {:?}, remaining lives: {}",
+                    player1_marker.translation + LEVEL_TRANSLATION_OFFSET,
+                    player_lives.player1
+                );
                 // Spawn animation
                 spawn_born(
                     player1_marker.translation + LEVEL_TRANSLATION_OFFSET,
@@ -78,6 +83,11 @@ pub fn auto_spawn_players(
     if !player2_exists && *multiplayer_mode == MultiplayerMode::TwoPlayers {
         for player2_marker in &q_player2_marker {
             if !*spawning_player2 && player_lives.player2 > 0 {
+                info!(
+                    "Starting spawn animation for Player 2 at position {:?}, remaining lives: {}",
+                    player2_marker.translation + LEVEL_TRANSLATION_OFFSET,
+                    player_lives.player2
+                );
                 // Spawn animation
                 spawn_born(
                     player2_marker.translation + LEVEL_TRANSLATION_OFFSET,
@@ -109,7 +119,14 @@ pub fn auto_spawn_players(
 
     // After spawn animation completes, create player
     for spawn_player_event in spawn_player_er.read() {
-        debug!("Spawning player: {:?}", spawn_player_event);
+        info!(
+            "Spawning Player {} at position ({:.1}, {:.1}), lives remaining: P1={}, P2={}",
+            spawn_player_event.player_no.0,
+            spawn_player_event.pos.x,
+            spawn_player_event.pos.y,
+            player_lives.player1,
+            player_lives.player2
+        );
         // Protection shield
         let shield = commands
             .spawn((
@@ -175,8 +192,16 @@ pub fn auto_spawn_players(
         // Decrease lives
         if spawn_player_event.player_no.0 == 1 {
             player_lives.player1 -= 1;
+            info!(
+                "Player 1 spawned, lives remaining: {}",
+                player_lives.player1
+            );
         } else if spawn_player_event.player_no.0 == 2 {
             player_lives.player2 -= 1;
+            info!(
+                "Player 2 spawned, lives remaining: {}",
+                player_lives.player2
+            );
         }
 
         // Reset state
@@ -196,7 +221,13 @@ pub fn spawn_born(
     atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>,
 ) {
     // Spawn effect
-    debug!("Spawning born effect for player {}", player_no.0);
+    trace!(
+        "Spawning born effect animation for player {} at position ({:.1}, {:.1}, {:.1})",
+        player_no.0,
+        pos.x,
+        pos.y,
+        pos.z
+    );
     let born_texture_handle = asset_server.load("textures/born.bmp");
 
     let born_texture_atlas = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 1, None, None);
@@ -331,6 +362,10 @@ pub fn players_attack(
             || (player_no.0 == 2 && keyboard_input.just_pressed(KeyCode::Enter)))
             && refresh_bullet_timer.is_finished()
         {
+            debug!(
+                "Player {} firing bullet in direction {:?} from position ({:.1}, {:.1})",
+                player_no.0, direction, transform.translation.x, transform.translation.y
+            );
             spawn_bullet(
                 &mut commands,
                 &asset_server,
@@ -367,6 +402,7 @@ pub fn remove_shield(
         timer.0.tick(time.delta());
 
         if timer.0.is_finished() && scheduled.0.insert(entity) {
+            debug!("Shield timer expired, removing protection shield");
             commands.entity(entity).despawn();
         }
     }
@@ -409,8 +445,16 @@ pub fn animate_born(
         }
         if born_remove_timer.0.is_finished() {
             if scheduled.0.insert(entity) {
+                trace!(
+                    "Born animation completed for player {}, despawning animation entity",
+                    player_no.0
+                );
                 commands.entity(entity).despawn();
             }
+            debug!(
+                "Born animation finished, creating player spawn event for player {}",
+                player_no.0
+            );
             spawn_player_ew.write(SpawnPlayerEvent {
                 pos: transform.translation.truncate(),
                 player_no: *player_no,
@@ -424,8 +468,13 @@ pub fn cleanup_players(
     q_players: Query<Entity, With<PlayerNo>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
+    let player_count = q_players.iter().count();
+    if player_count > 0 {
+        debug!("Cleaning up {} player entities", player_count);
+    }
     for entity in &q_players {
         if scheduled.0.insert(entity) {
+            trace!("Despawning player entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }
@@ -436,8 +485,13 @@ pub fn cleanup_born(
     q_born: Query<Entity, With<Born>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
+    let born_count = q_born.iter().count();
+    if born_count > 0 {
+        debug!("Cleaning up {} born animation entities", born_count);
+    }
     for entity in &q_born {
         if scheduled.0.insert(entity) {
+            trace!("Despawning born animation entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }

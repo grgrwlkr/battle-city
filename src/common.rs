@@ -34,7 +34,7 @@ pub enum AppState {
     GameOver,
 }
 
-#[derive(Resource, Debug, PartialEq, Eq)]
+#[derive(Resource, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MultiplayerMode {
     SinglePlayer,
     TwoPlayers,

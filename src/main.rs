@@ -74,13 +74,24 @@ fn main() {
                 reset_level_selection,
                 reset_level_spawned_enemies,
                 reset_multiplayer_mode,
+                |state: Res<State<AppState>>| {
+                    info!("Entered state: {:?}", state.get());
+                },
             ),
         )
         .add_systems(
             OnExit(AppState::StartMenu),
             (despawn_screen::<OnStartMenuScreen>,),
         )
-        .add_systems(OnEnter(AppState::Playing), (setup_levels,))
+        .add_systems(
+            OnEnter(AppState::Playing),
+            (
+                setup_levels,
+                |state: Res<State<AppState>>| {
+                    info!("Entered state: {:?}", state.get());
+                },
+            ),
+        )
         // Input handling
         .add_systems(
             Update,
@@ -182,7 +193,15 @@ fn main() {
                 .after(GameplaySet::Collision)
                 .run_if(in_state(AppState::Playing)),
         )
-        .add_systems(OnEnter(AppState::GameOver), (setup_game_over,))
+        .add_systems(
+            OnEnter(AppState::GameOver),
+            (
+                setup_game_over,
+                |state: Res<State<AppState>>| {
+                    warn!("Entered state: {:?} - Game Over!", state.get());
+                },
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -205,9 +224,11 @@ fn main() {
 }
 
 fn setup_camera(mut commands: Commands) {
+    info!("Setting up 2D camera");
     commands.spawn(Camera2d);
 }
 
 fn setup_rapier(mut rapier_config: Single<&mut RapierConfiguration>) {
+    info!("Configuring Rapier physics: gravity disabled (top-down game)");
     rapier_config.gravity = Vec2::ZERO;
 }

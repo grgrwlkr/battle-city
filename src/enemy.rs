@@ -33,12 +33,23 @@ pub fn auto_spawn_enemies(
     asset_server: Res<AssetServer>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    if q_enemies.into_iter().len() >= MAX_LIVE_ENEMIES as usize {
+    let current_enemy_count = q_enemies.iter().len();
+    if current_enemy_count >= MAX_LIVE_ENEMIES as usize {
         // Maximum number of alive enemies on the battlefield has been reached
+        trace!(
+            "Cannot spawn enemy: maximum alive enemies reached ({}/{})",
+            current_enemy_count,
+            MAX_LIVE_ENEMIES
+        );
         return;
     }
-    if level_spawned_enemies.0 == ENEMIES_PER_LEVEL {
+    if level_spawned_enemies.0 >= ENEMIES_PER_LEVEL {
         // Maximum number of enemies spawned for this level has been reached
+        trace!(
+            "Cannot spawn enemy: level enemy limit reached ({}/{})",
+            level_spawned_enemies.0,
+            ENEMIES_PER_LEVEL
+        );
         return;
     }
     let mut marker_positions = Vec::new();
@@ -59,14 +70,29 @@ pub fn auto_spawn_enemies(
         // Cannot be too close to tanks on the battlefield
         for enemy_pos in &q_enemies {
             if choosed_pos.distance(enemy_pos.translation) < 2. * TILE_SIZE {
+                trace!(
+                    "Enemy spawn cancelled: too close to existing enemy at ({:.1}, {:.1})",
+                    enemy_pos.translation.x,
+                    enemy_pos.translation.y
+                );
                 return;
             }
         }
         for player_pos in &q_players {
             if choosed_pos.distance(player_pos.translation) < 2. * TILE_SIZE {
+                trace!(
+                    "Enemy spawn cancelled: too close to player at ({:.1}, {:.1})",
+                    player_pos.translation.x,
+                    player_pos.translation.y
+                );
                 return;
             }
         }
+        info!(
+            "Spawning enemy at position ({:.1}, {:.1}), level progress: {}/{}, alive enemies: {}/{}",
+            choosed_pos.x, choosed_pos.y, level_spawned_enemies.0 + 1, ENEMIES_PER_LEVEL,
+            current_enemy_count + 1, MAX_LIVE_ENEMIES
+        );
         spawn_enemy(
             choosed_pos,
             &mut commands,
@@ -92,6 +118,7 @@ pub fn spawn_enemy(
     let indexes: Vec<i32> = enemies_sprite_index_sets().iter().map(|v| v[0]).collect();
     let mut rng = rand::thread_rng();
     let choosed_index = indexes[rng.gen_range(0..indexes.len())];
+    trace!("Enemy spawned with sprite index {}", choosed_index);
 
     commands.spawn((
         Enemy,
@@ -250,6 +277,7 @@ pub fn enemies_move(
 
         // Reset direction change timer
         timer.0.reset();
+        trace!("Enemy changed direction to {:?}", choosed_direction);
     }
 }
 
@@ -266,6 +294,10 @@ pub fn enemies_attack(
     for (transform, direction, mut refresh_bullet_timer) in &mut q_players {
         refresh_bullet_timer.tick(time.delta());
         if refresh_bullet_timer.just_finished() {
+            debug!(
+                "Enemy firing bullet in direction {:?} from position ({:.1}, {:.1})",
+                direction, transform.translation.x, transform.translation.y
+            );
             spawn_bullet(
                 &mut commands,
                 &asset_server,
@@ -295,6 +327,7 @@ pub fn handle_enemy_collision(
                 };
 
                 // Reset direction change timer
+                trace!("Enemy collision detected, resetting direction change timer for enemy entity {:?}", enemy_entity);
                 let mut change_direction_timer = q_enemies.get_mut(enemy_entity).unwrap();
                 change_direction_timer.0.reset();
             }
@@ -315,8 +348,13 @@ pub fn cleanup_enemies(
     q_enemies: Query<Entity, With<Enemy>>,
     mut scheduled: ResMut<crate::common::ScheduledDespawn>,
 ) {
+    let enemy_count = q_enemies.iter().count();
+    if enemy_count > 0 {
+        info!("Cleaning up {} enemy entities", enemy_count);
+    }
     for entity in &q_enemies {
         if scheduled.0.insert(entity) {
+            trace!("Despawning enemy entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }
