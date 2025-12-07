@@ -157,6 +157,8 @@ fn main() {
                 .run_if(in_state(AppState::GameOver)),
         )
         // Animations
+        // Note: animate_players, animate_enemies, animate_shield now use the generic
+        // animate_sprite_sheet function from common.rs to avoid code duplication
         .add_systems(
             Update,
             (

@@ -302,24 +302,12 @@ pub fn handle_enemy_collision(
     }
 }
 
-// Tank movement animation
+// Tank movement animation - uses generic animate_sprite_sheet from common
 pub fn animate_enemies(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<Enemy>>,
+    query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<Enemy>>,
 ) {
-    for (mut timer, indices, mut sprite) in &mut query {
-        timer.0.tick(time.delta());
-        if timer.0.just_finished() {
-            // Switch to next sprite
-            if let Some(atlas) = &mut sprite.texture_atlas {
-                atlas.index = if atlas.index == indices.last {
-                    indices.first
-                } else {
-                    atlas.index + 1
-                };
-            }
-        }
-    }
+    crate::common::animate_sprite_sheet::<Enemy>(time, query);
 }
 
 pub fn cleanup_enemies(

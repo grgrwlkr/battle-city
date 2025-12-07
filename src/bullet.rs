@@ -106,26 +106,23 @@ pub fn handle_bullet_collision(
                     *entity1
                 };
 
-                println!(
-                    "bullet: {:?}, collision entity1: {:?}, entity2: {:?}",
+                debug!(
+                    "Bullet collision: bullet={:?}, entity1={:?}, entity2={:?}",
                     bullet_entity, entity1, entity2
                 );
 
                 let (_, bullet, bullet_transform) = q_bullets.get(bullet_entity).unwrap();
 
-                info!("bullet hit something");
+                info!("Bullet hit something");
                 // Other object
                 if q_level_items.contains(other_entity) {
-                    info!("Bullet hit level item");
                     let (level_item, level_item_transform, _) =
                         q_level_items.get(other_entity).unwrap();
-                    dbg!(level_item);
-                    // dbg!(bullet_transform);
-                    // dbg!(level_item_transform);
+                    debug!("Bullet hit level item: {:?}", level_item);
                     match level_item {
                         LevelItem::Home => {
                             // Game Over
-                            println!("Game over");
+                            warn!("Game over: Home destroyed");
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }

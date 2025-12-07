@@ -109,7 +109,7 @@ pub fn auto_spawn_players(
 
     // After spawn animation completes, create player
     for spawn_player_event in spawn_player_er.read() {
-        dbg!(spawn_player_event);
+        debug!("Spawning player: {:?}", spawn_player_event);
         // Protection shield
         let shield = commands
             .spawn((
@@ -196,7 +196,7 @@ pub fn spawn_born(
     atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>,
 ) {
     // Spawn effect
-    println!("spawn born once");
+    debug!("Spawning born effect for player {}", player_no.0);
     let born_texture_handle = asset_server.load("textures/born.bmp");
 
     let born_texture_atlas = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 1, None, None);
@@ -302,24 +302,12 @@ pub fn players_move(
     }
 }
 
-// Tank movement animation
+// Tank movement animation - uses generic animate_sprite_sheet from common
 pub fn animate_players(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<PlayerNo>>,
+    query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<PlayerNo>>,
 ) {
-    for (mut timer, indices, mut sprite) in &mut query {
-        timer.0.tick(time.delta());
-        if timer.0.just_finished() {
-            // Switch to next sprite
-            if let Some(atlas) = &mut sprite.texture_atlas {
-                atlas.index = if atlas.index == indices.last {
-                    indices.first
-                } else {
-                    atlas.index + 1
-                };
-            }
-        }
-    }
+    crate::common::animate_sprite_sheet::<PlayerNo>(time, query);
 }
 
 // Player attack
@@ -360,24 +348,12 @@ pub fn players_attack(
     }
 }
 
-// Shield animation
+// Shield animation - uses generic animate_sprite_sheet from common
 pub fn animate_shield(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<Shield>>,
+    query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<Shield>>,
 ) {
-    for (mut timer, indices, mut sprite) in &mut query {
-        timer.0.tick(time.delta());
-        if timer.0.just_finished() {
-            // Switch to next sprite
-            if let Some(atlas) = &mut sprite.texture_atlas {
-                atlas.index = if atlas.index == indices.last {
-                    indices.first
-                } else {
-                    atlas.index + 1
-                };
-            }
-        }
-    }
+    crate::common::animate_sprite_sheet::<Shield>(time, query);
 }
 
 // Remove protection shield
@@ -397,7 +373,7 @@ pub fn remove_shield(
 }
 
 // Spawn animation
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn animate_born(
     mut commands: Commands,
     time: Res<Time>,

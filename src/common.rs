@@ -114,3 +114,25 @@ pub enum GameplaySet {
     /// UI and game state updates (pause, game over)
     Ui,
 }
+
+/// Generic sprite sheet animation system
+/// Animates sprites with AnimationTimer and AnimationIndices components
+/// This function is used to avoid code duplication in animation systems
+pub fn animate_sprite_sheet<T: Component>(
+    time: Res<Time>,
+    mut query: Query<(&mut AnimationTimer, &AnimationIndices, &mut Sprite), With<T>>,
+) {
+    for (mut timer, indices, mut sprite) in &mut query {
+        timer.0.tick(time.delta());
+        if timer.0.just_finished() {
+            // Switch to next sprite
+            if let Some(atlas) = &mut sprite.texture_atlas {
+                atlas.index = if atlas.index == indices.last {
+                    indices.first
+                } else {
+                    atlas.index + 1
+                };
+            }
+        }
+    }
+}
