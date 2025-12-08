@@ -16,6 +16,10 @@ pub struct OnStartMenuScreenMultiplayerModeFlag;
 #[derive(Component)]
 pub struct OnGameOverScreen;
 
+/// Component marking UI entities on the victory screen
+#[derive(Component)]
+pub struct OnVictoryScreen;
+
 /// Setup the start menu UI
 /// Creates UI elements including title, player preview, and mode selection
 pub fn setup_start_menu(
@@ -94,6 +98,56 @@ pub fn setup_game_over(
         AudioPlayer(game_sounds.game_over.clone()),
         PlaybackSettings::DESPAWN,
     ));
+}
+
+/// Setup the victory screen UI
+/// Displays victory message when all levels are completed
+pub fn setup_victory(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    game_sounds: Res<GameSounds>,
+    game_config: Res<GameConfig>,
+) {
+    info!("Setting up victory screen");
+    // Use game over texture as placeholder, can be replaced with victory texture later
+    let victory_texture = asset_server.load("textures/game_over.bmp");
+    commands.spawn((
+        Sprite {
+            image: victory_texture,
+            ..default()
+        },
+        Transform::from_translation(Vec3::new(0., -400., game_config.sprite_order.game_over)),
+        OnVictoryScreen,
+    ));
+    // Play victory sound (using game_over sound as placeholder)
+    commands.spawn((
+        AudioPlayer(game_sounds.game_over.clone()),
+        PlaybackSettings::DESPAWN,
+    ));
+}
+
+/// Handle victory screen input - return to start menu
+pub fn handle_victory_input(
+    mut app_state: ResMut<NextState<AppState>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard_input.any_just_pressed([KeyCode::Enter, KeyCode::Space, KeyCode::Escape]) {
+        info!("Returning to start menu from victory screen");
+        app_state.set(AppState::StartMenu);
+    }
+}
+
+/// Despawn victory screen entities when leaving victory state
+pub fn despawn_victory_screen(
+    mut commands: Commands,
+    q_victory: Query<Entity, With<OnVictoryScreen>>,
+    mut scheduled: ResMut<crate::common::ScheduledDespawn>,
+) {
+    for entity in &q_victory {
+        if scheduled.0.insert(entity) {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 pub fn animate_game_over(
@@ -273,6 +327,22 @@ impl Plugin for UiPlugin {
             animate_game_over
                 .in_set(crate::common::GameplaySet::Animation)
                 .run_if(in_state(AppState::GameOver)),
+        )
+        .add_systems(
+            OnEnter(AppState::Victory),
+            (setup_victory, |state: Res<State<AppState>>| {
+                info!("Entered state: {:?} - Victory!", state.get());
+            }),
+        )
+        .add_systems(
+            OnExit(AppState::Victory),
+            (despawn_victory_screen,),
+        )
+        .add_systems(
+            Update,
+            handle_victory_input
+                .in_set(crate::common::GameplaySet::Input)
+                .run_if(in_state(AppState::Victory)),
         );
     }
 }

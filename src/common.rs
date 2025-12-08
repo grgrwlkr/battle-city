@@ -18,6 +18,8 @@ pub enum AppState {
     Paused,
     /// Game over state
     GameOver,
+    /// Game victory state (all levels completed)
+    Victory,
 }
 
 /// Multiplayer mode configuration

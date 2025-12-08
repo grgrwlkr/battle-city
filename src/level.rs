@@ -186,7 +186,8 @@ pub fn setup_levels(
     level_selection: Res<LevelSelection>,
     game_config: Res<GameConfig>,
 ) {
-    if q_ldtk_world.iter().len() > 0 {
+    // Optimize: use is_empty() instead of iter().len() > 0
+    if !q_ldtk_world.is_empty() {
         // No need to reload LDTK when entering from Paused state
         trace!("LDTK world already loaded, skipping setup");
         return;
@@ -214,7 +215,15 @@ pub fn spawn_ldtk_entity(
     asset_server: Res<AssetServer>,
     game_config: Res<GameConfig>,
 ) {
+    // Optimize: pre-allocate texture atlas for all trees (shared resource)
+    let map_texture_handle = asset_server.load("textures/map.bmp");
+    let map_texture_atlas = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 7, 1, None, None);
+    let map_texture_atlas_handle = texture_atlases.add(map_texture_atlas);
+    let offset = level_translation_offset(&game_config);
+
     let mut spawned_count = 0;
+    let mut entities_to_spawn = Vec::new();
+
     for (_entity, transform, entity_instance) in entity_query.iter() {
         if entity_instance.identifier == *"Tree" {
             trace!(
@@ -223,28 +232,28 @@ pub fn spawn_ldtk_entity(
                 transform.translation.y
             );
             spawned_count += 1;
-            let map_texture_handle = asset_server.load("textures/map.bmp");
-            let map_texture_atlas =
-                TextureAtlasLayout::from_grid(UVec2::new(32, 32), 7, 1, None, None);
-            let map_texture_atlas_handle = texture_atlases.add(map_texture_atlas);
-
-            let offset = level_translation_offset(&game_config);
             let mut translation = transform.translation + offset;
             translation.z = game_config.sprite_order.tree;
-            commands.spawn((
-                LevelItem::Tree,
-                Sprite {
-                    image: map_texture_handle,
-                    texture_atlas: Some(TextureAtlas {
-                        index: 2,
-                        layout: map_texture_atlas_handle,
-                    }),
-                    ..default()
-                },
-                Transform::from_translation(translation),
-            ));
+            entities_to_spawn.push(translation);
         }
     }
+
+    // Batch spawn all tree entities
+    for translation in entities_to_spawn {
+        commands.spawn((
+            LevelItem::Tree,
+            Sprite {
+                image: map_texture_handle.clone(),
+                texture_atlas: Some(TextureAtlas {
+                    index: 2,
+                    layout: map_texture_atlas_handle.clone(),
+                }),
+                ..default()
+            },
+            Transform::from_translation(translation),
+        ));
+    }
+
     if spawned_count > 0 {
         debug!("Spawned {} Tree entities from LDTK", spawned_count);
     }
@@ -295,15 +304,16 @@ pub fn auto_switch_level(
 ) {
     // Switch to next level when maximum enemies spawned and all enemies are destroyed
     let enemies_per_level = game_config.enemy.enemies_per_level;
-    if level_spawned_enemies.0 == enemies_per_level && q_enemies.iter().len() == 0 {
+    // Optimize: use is_empty() instead of iter().len() == 0
+    if level_spawned_enemies.0 == enemies_per_level && q_enemies.is_empty() {
         if let LevelSelection::Indices(LevelIndices { level, .. }) = *level_selection {
             if level as i32 == game_config.level.max_levels - 1 {
-                // TODO: Game victory
+                // Game victory - all levels completed
                 info!(
                     "Level {} completed! All enemies destroyed. Game victory!",
                     level + 1
                 );
-                app_state.set(AppState::StartMenu);
+                app_state.set(AppState::Victory);
             } else {
                 // Next level
                 let player_count = q_players.iter().count();

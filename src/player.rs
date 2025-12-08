@@ -4,8 +4,8 @@ use bevy_rapier2d::prelude::*;
 use crate::bullet::*;
 use crate::common::{self, AppState, *};
 use crate::config::GameConfig;
-use crate::level::Player2Marker;
-use crate::level::{level_translation_offset, Player1Marker};
+use crate::enemy::Enemy;
+use crate::level::{level_translation_offset, CollisionEvent, Player1Marker, Player2Marker};
 
 /// Spawn protection shield component
 /// Provides temporary invincibility after player spawn
@@ -60,7 +60,7 @@ impl Default for PlayerLives {
 
 /// Automatically spawn players when they die and have remaining lives
 /// Monitors player entities and spawn markers to initiate spawn animations
-/// 
+///
 /// This system checks if players exist and if they should be respawned based on:
 /// - Player existence on the map
 /// - Remaining lives count
@@ -80,16 +80,9 @@ pub fn auto_spawn_players(
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     game_config: Res<GameConfig>,
 ) {
-    let mut player1_exists = false;
-    let mut player2_exists = false;
-    for player in &q_players {
-        if player.0 == 1 {
-            player1_exists = true;
-        }
-        if player.0 == 2 {
-            player2_exists = true;
-        }
-    }
+    // Optimize: use any() instead of iterating all players
+    let player1_exists = q_players.iter().any(|player| player.0 == 1);
+    let player2_exists = q_players.iter().any(|player| player.0 == 2);
     if !player1_exists {
         for player1_marker in &q_player1_marker {
             if !*spawning_player1 && player_lives.player1 > 0 {
@@ -286,6 +279,61 @@ pub fn spawn_born(
         AnimationIndices { first: 0, last: 3 },
         BornRemoveTimer(Timer::from_seconds(2.0, TimerMode::Once)),
     ));
+}
+
+/// Handle tank-to-tank collisions causing forced movement
+/// When tanks collide, they stop to prevent overlap
+/// Rapier physics will handle the separation naturally
+///
+/// Note: ParamSet is required to avoid Query conflict (B0001 error).
+/// Type complexity warning is acceptable here as ParamSet cannot use type aliases
+/// due to lifetime parameters in Query types.
+#[allow(clippy::type_complexity)]
+pub fn handle_tank_collisions(
+    mut velocities: ParamSet<(
+        Query<&mut Velocity, With<PlayerNo>>,
+        Query<&mut Velocity, With<Enemy>>,
+    )>,
+    mut collision_er: MessageReader<CollisionEvent>,
+    player_entities: Query<Entity, With<PlayerNo>>,
+    enemy_entities: Query<Entity, With<Enemy>>,
+) {
+    for event in collision_er.read() {
+        if let CollisionEvent::Started(entity1, entity2, _flags) = event {
+            // Check if both entities are tanks (player or enemy)
+            let is_tank1 = player_entities.contains(*entity1) || enemy_entities.contains(*entity1);
+            let is_tank2 = player_entities.contains(*entity2) || enemy_entities.contains(*entity2);
+
+            if !is_tank1 || !is_tank2 {
+                continue;
+            }
+
+            // Stop both tanks when they collide
+            // Rapier will handle the physical separation
+            // Use ParamSet to avoid Query conflict - access players first, then enemies
+            // Process entity1
+            if player_entities.contains(*entity1) {
+                if let Ok(mut vel) = velocities.p0().get_mut(*entity1) {
+                    vel.linvel *= 0.3;
+                }
+            } else if enemy_entities.contains(*entity1) {
+                if let Ok(mut vel) = velocities.p1().get_mut(*entity1) {
+                    vel.linvel *= 0.3;
+                }
+            }
+
+            // Process entity2
+            if player_entities.contains(*entity2) {
+                if let Ok(mut vel) = velocities.p0().get_mut(*entity2) {
+                    vel.linvel *= 0.3;
+                }
+            } else if enemy_entities.contains(*entity2) {
+                if let Ok(mut vel) = velocities.p1().get_mut(*entity2) {
+                    vel.linvel *= 0.3;
+                }
+            }
+        }
+    }
 }
 
 /// Handle player tank movement based on keyboard input
@@ -588,6 +636,13 @@ impl Plugin for PlayerPlugin {
             )
             .add_systems(
                 Update,
+                handle_tank_collisions
+                    .in_set(crate::common::GameplaySet::Collision)
+                    .after(crate::common::GameplaySet::Movement)
+                    .run_if(in_state(AppState::Playing)),
+            )
+            .add_systems(
+                Update,
                 (animate_players, animate_shield, remove_shield)
                     .chain()
                     .in_set(crate::common::GameplaySet::Animation)
@@ -627,7 +682,7 @@ mod tests {
     fn test_player_no() {
         let player1 = PlayerNo(1);
         let player2 = PlayerNo(2);
-        
+
         assert_eq!(player1.0, 1);
         assert_eq!(player2.0, 2);
         assert_ne!(player1, player2);
@@ -646,7 +701,7 @@ mod tests {
             pos: Vec2::new(100.0, 200.0),
             player_no: PlayerNo(1),
         };
-        
+
         assert_eq!(event.pos, Vec2::new(100.0, 200.0));
         assert_eq!(event.player_no, PlayerNo(1));
     }
@@ -656,18 +711,18 @@ mod tests {
         // Test that reset_player_lives uses initial_lives from config
         use crate::config::GameConfig;
         use bevy::prelude::*;
-        
+
         let mut app = App::new();
         app.init_resource::<GameConfig>()
             .init_resource::<PlayerLives>();
-        
+
         // Set custom lives
         {
             let mut lives = app.world_mut().resource_mut::<PlayerLives>();
             lives.player1 = 0;
             lives.player2 = 0;
         }
-        
+
         // Reset using function - simplified test
         let initial_lives = {
             let config = app.world().resource::<GameConfig>();
@@ -678,7 +733,7 @@ mod tests {
             lives_mut.player1 = initial_lives;
             lives_mut.player2 = initial_lives;
         }
-        
+
         let lives_after = app.world().resource::<PlayerLives>();
         assert_eq!(lives_after.player1, 3);
         assert_eq!(lives_after.player2, 3);

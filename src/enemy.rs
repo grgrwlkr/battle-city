@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use rand::Rng;
+use std::time::Duration;
 
 use crate::{
     bullet::{spawn_bullet, Bullet},
@@ -37,7 +38,8 @@ pub fn auto_spawn_enemies(
 ) {
     let max_live_enemies = game_config.enemy.max_live_enemies;
     let enemies_per_level = game_config.enemy.enemies_per_level;
-    let current_enemy_count = q_enemies.iter().len();
+    // Use count() instead of iter().len() for better performance
+    let current_enemy_count = q_enemies.iter().count();
     if current_enemy_count >= max_live_enemies as usize {
         // Maximum number of alive enemies on the battlefield has been reached
         trace!(
@@ -72,25 +74,21 @@ pub fn auto_spawn_enemies(
         let choosed_pos = marker_positions[idx].translation();
 
         // Cannot be too close to tanks on the battlefield
-        for enemy_pos in &q_enemies {
-            if choosed_pos.distance(enemy_pos.translation) < 2. * TILE_SIZE {
-                trace!(
-                    "Enemy spawn cancelled: too close to existing enemy at ({:.1}, {:.1})",
-                    enemy_pos.translation.x,
-                    enemy_pos.translation.y
-                );
-                return;
-            }
+        // Optimize: use any() for early exit
+        let too_close_to_enemy = q_enemies
+            .iter()
+            .any(|enemy_pos| choosed_pos.distance(enemy_pos.translation) < 2. * TILE_SIZE);
+        if too_close_to_enemy {
+            trace!("Enemy spawn cancelled: too close to existing enemy");
+            return;
         }
-        for player_pos in &q_players {
-            if choosed_pos.distance(player_pos.translation) < 2. * TILE_SIZE {
-                trace!(
-                    "Enemy spawn cancelled: too close to player at ({:.1}, {:.1})",
-                    player_pos.translation.x,
-                    player_pos.translation.y
-                );
-                return;
-            }
+
+        let too_close_to_player = q_players
+            .iter()
+            .any(|player_pos| choosed_pos.distance(player_pos.translation) < 2. * TILE_SIZE);
+        if too_close_to_player {
+            trace!("Enemy spawn cancelled: too close to player");
+            return;
         }
         info!(
             "Spawning enemy at position ({:.1}, {:.1}), level progress: {}/{}, alive enemies: {}/{}",
@@ -177,9 +175,6 @@ pub fn spawn_enemy(
 /// When timer expires or collision occurs, enemies choose a new random direction
 /// Implements obstacle avoidance for level items
 ///
-/// # TODO
-/// - Actively attack when player is detected
-/// - Trees can provide cover
 pub fn enemies_move(
     mut q_enemies: Query<
         (
@@ -306,34 +301,113 @@ pub fn enemies_move(
     }
 }
 
+/// Check if any player is within detection range of the enemy
+fn is_player_detected(enemy_pos: Vec3, q_players: &Query<&Transform, With<PlayerNo>>) -> bool {
+    const DETECTION_RANGE: f32 = 300.0;
+    !q_players.is_empty()
+        && q_players.iter().any(|player_transform| {
+            let distance = (enemy_pos - player_transform.translation).length();
+            distance < DETECTION_RANGE
+        })
+}
+
+/// Check if there are obstacles (trees) blocking the shooting direction
+fn has_tree_cover(
+    enemy_pos: Vec3,
+    direction: &common::Direction,
+    q_level_items: &Query<(&LevelItem, &GlobalTransform)>,
+) -> bool {
+    const OBSTACLE_CHECK_RANGE: f32 = 50.0;
+    if q_level_items.is_empty() {
+        return false;
+    }
+    let direction_vec = match direction {
+        common::Direction::Up => Vec3::new(0.0, 1.0, 0.0),
+        common::Direction::Down => Vec3::new(0.0, -1.0, 0.0),
+        common::Direction::Left => Vec3::new(-1.0, 0.0, 0.0),
+        common::Direction::Right => Vec3::new(1.0, 0.0, 0.0),
+    };
+    q_level_items.iter().any(|(level_item, item_transform)| {
+        if *level_item == LevelItem::Tree {
+            let item_pos = item_transform.translation();
+            let to_item = item_pos - enemy_pos;
+            let distance = to_item.length();
+
+            if distance < OBSTACLE_CHECK_RANGE && distance > 0.0 {
+                let dot_product = to_item.normalize().dot(direction_vec);
+                if dot_product > 0.7 {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+}
+
 /// Handle enemy shooting behavior
 /// Enemies automatically fire bullets based on their cooldown timer
+/// When player is detected, enemies fire more frequently
 /// Bullets are spawned in the direction the enemy is facing
+///
+/// Note: This function requires 8 parameters due to Bevy ECS architecture.
+/// Each parameter is a system parameter that must be declared separately.
+/// Grouping them would break Bevy's system parameter inference.
+#[allow(clippy::too_many_arguments)]
 pub fn enemies_attack(
-    mut q_players: Query<
+    mut commands: Commands,
+    mut q_enemies: Query<
         (&Transform, &common::Direction, &mut TankRefreshBulletTimer),
         With<Enemy>,
     >,
+    q_players: Query<&Transform, With<PlayerNo>>,
+    q_level_items: Query<(&LevelItem, &GlobalTransform)>,
     time: Res<Time>,
-    mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    game_config: Res<GameConfig>,
 ) {
-    for (transform, direction, mut refresh_bullet_timer) in &mut q_players {
+    const AGGRO_COOLDOWN_MULTIPLIER: f32 = 0.5; // Reduce cooldown when player is detected
+
+    for (enemy_transform, direction, mut refresh_bullet_timer) in &mut q_enemies {
         refresh_bullet_timer.tick(time.delta());
-        if refresh_bullet_timer.just_finished() {
+
+        let player_detected = is_player_detected(enemy_transform.translation, &q_players);
+        let has_tree_cover = has_tree_cover(enemy_transform.translation, direction, &q_level_items);
+
+        // Don't shoot if there's a tree blocking the shot (unless player is very close)
+        if has_tree_cover && !player_detected {
+            continue;
+        }
+
+        // Adjust cooldown based on player detection
+        let cooldown_modifier = if player_detected {
+            AGGRO_COOLDOWN_MULTIPLIER
+        } else {
+            1.0
+        };
+
+        // Check if we can fire (with modified cooldown when player is detected)
+        let can_fire = if player_detected {
+            refresh_bullet_timer.elapsed()
+                >= Duration::from_secs_f32(game_config.enemy.bullet_cooldown * cooldown_modifier)
+        } else {
+            refresh_bullet_timer.is_finished()
+        };
+
+        if can_fire {
             debug!(
-                "Enemy firing bullet in direction {:?} from position ({:.1}, {:.1})",
-                direction, transform.translation.x, transform.translation.y
+                "Enemy firing bullet in direction {:?} from position ({:.1}, {:.1}), player detected: {}, tree cover: {}",
+                direction, enemy_transform.translation.x, enemy_transform.translation.y, player_detected, has_tree_cover
             );
             spawn_bullet(
                 &mut commands,
                 &asset_server,
                 &mut atlas_layouts,
                 Bullet::Enemy,
-                transform.translation,
+                enemy_transform.translation,
                 *direction,
             );
+            refresh_bullet_timer.reset();
         }
     }
 }

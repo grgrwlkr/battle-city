@@ -49,7 +49,6 @@ impl Plugin for CorePlugin {
     }
 }
 
-// TODO: Tank collision causes forced movement
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))

@@ -8,7 +8,6 @@ use crate::enemy::Enemy;
 use crate::level::{CollisionEvent, HomeDyingEvent, LevelItem};
 use crate::player::{PlayerLives, PlayerNo, Shield};
 
-
 /// Bullet type component
 /// Identifies whether a bullet belongs to a player or enemy
 #[derive(Component, PartialEq, Eq, Debug)]
@@ -92,7 +91,7 @@ pub fn move_bullet(
 /// Handle bullet collision events
 /// Processes collisions between bullets and other entities (walls, tanks, base)
 /// Triggers appropriate responses: destroy wall, damage tank, game over, etc.
-/// 
+///
 /// # Collision Types Handled
 /// - Bullet vs Level Items (walls, home)
 /// - Bullet vs Area Walls (boundaries)
@@ -199,6 +198,24 @@ pub fn handle_bullet_collision(
                             }
                             if scheduled.0.insert(other_entity) {
                                 commands.entity(other_entity).despawn();
+                            }
+                            explosion_ew.write(ExplosionEvent {
+                                pos: Vec3::new(
+                                    bullet_transform.translation.x,
+                                    bullet_transform.translation.y,
+                                    bullet_transform.translation.z,
+                                ),
+                                explosion_type: ExplosionType::BulletExplosion,
+                            });
+                        }
+                        LevelItem::Tree => {
+                            // Trees provide cover - bullets stop when hitting trees
+                            debug!(
+                                "Bullet stopped by tree (cover) at position ({:.1}, {:.1})",
+                                bullet_transform.translation.x, bullet_transform.translation.y
+                            );
+                            if scheduled.0.insert(bullet_entity) {
+                                commands.entity(bullet_entity).despawn();
                             }
                             explosion_ew.write(ExplosionEvent {
                                 pos: Vec3::new(
@@ -515,6 +532,7 @@ pub fn cleanup_bullets(
     q_bullets: Query<Entity, With<Bullet>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
+    // Count bullets efficiently
     let bullet_count = q_bullets.iter().count();
     if bullet_count > 0 {
         debug!("Cleaning up {} bullet entities", bullet_count);
@@ -612,7 +630,10 @@ mod tests {
     #[test]
     fn test_explosion_type_variants() {
         assert_eq!(ExplosionType::BigExplosion, ExplosionType::BigExplosion);
-        assert_eq!(ExplosionType::BulletExplosion, ExplosionType::BulletExplosion);
+        assert_eq!(
+            ExplosionType::BulletExplosion,
+            ExplosionType::BulletExplosion
+        );
         assert_ne!(ExplosionType::BigExplosion, ExplosionType::BulletExplosion);
     }
 
@@ -622,7 +643,7 @@ mod tests {
             pos: Vec3::new(100.0, 200.0, 0.0),
             explosion_type: ExplosionType::BigExplosion,
         };
-        
+
         assert_eq!(event.pos, Vec3::new(100.0, 200.0, 0.0));
         assert_eq!(event.explosion_type, ExplosionType::BigExplosion);
     }
