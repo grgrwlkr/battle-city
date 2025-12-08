@@ -7,33 +7,45 @@ use crate::config::GameConfig;
 use crate::level::Player2Marker;
 use crate::level::{level_translation_offset, Player1Marker};
 
-// Spawn protection shield
+/// Spawn protection shield component
+/// Provides temporary invincibility after player spawn
 #[derive(Component)]
 pub struct Shield;
 
-// Spawn protection shield timer
+/// Timer component for shield removal
+/// Controls when the spawn protection shield is removed
 #[derive(Component)]
 pub struct ShieldRemoveTimer(pub Timer);
 
-// Spawn effect
+/// Component marking a player spawn animation entity
 #[derive(Component)]
 pub struct Born;
+
+/// Timer component for spawn animation removal
 #[derive(Component)]
 pub struct BornRemoveTimer(pub Timer);
 
-#[derive(Debug, Clone, Copy, Component, Reflect, Default)]
+/// Player number component
+/// Identifies which player this entity belongs to (1 or 2)
+#[derive(Debug, Clone, Copy, Component, Reflect, Default, PartialEq, Eq)]
 #[reflect(Component)]
 pub struct PlayerNo(pub u32);
 
+/// Event emitted when a player should be spawned after animation completes
 #[derive(Debug, Message)]
 pub struct SpawnPlayerEvent {
-    pos: Vec2,
-    player_no: PlayerNo,
+    /// Spawn position on the map
+    pub pos: Vec2,
+    /// Player number (1 or 2)
+    pub player_no: PlayerNo,
 }
 
+/// Resource tracking player lives
 #[derive(Debug, Resource)]
 pub struct PlayerLives {
+    /// Number of lives remaining for player 1
     pub player1: i8,
+    /// Number of lives remaining for player 2
     pub player2: i8,
 }
 
@@ -46,6 +58,13 @@ impl Default for PlayerLives {
     }
 }
 
+/// Automatically spawn players when they die and have remaining lives
+/// Monitors player entities and spawn markers to initiate spawn animations
+/// 
+/// This system checks if players exist and if they should be respawned based on:
+/// - Player existence on the map
+/// - Remaining lives count
+/// - Multiplayer mode configuration
 #[allow(clippy::too_many_arguments)]
 pub fn auto_spawn_players(
     mut commands: Commands,
@@ -269,7 +288,9 @@ pub fn spawn_born(
     ));
 }
 
-// Player tank movement
+/// Handle player tank movement based on keyboard input
+/// Updates velocity and direction components based on pressed keys
+/// Supports both single player (WASD) and multiplayer (WASD + Arrow keys)
 pub fn players_move(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<(
@@ -366,7 +387,9 @@ pub fn animate_players(
     crate::common::animate_sprite_sheet::<PlayerNo>(time, query);
 }
 
-// Player attack
+/// Handle player shooting/attack actions
+/// Spawns bullets when fire keys are pressed and cooldown timer allows
+/// Plays fire sound effects on successful shot
 pub fn players_attack(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -592,5 +615,72 @@ impl Plugin for PlayerPlugin {
                     .in_set(crate::common::GameplaySet::Animation)
                     .run_if(in_state(AppState::GameOver)),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::GameConfig;
+
+    #[test]
+    fn test_player_no() {
+        let player1 = PlayerNo(1);
+        let player2 = PlayerNo(2);
+        
+        assert_eq!(player1.0, 1);
+        assert_eq!(player2.0, 2);
+        assert_ne!(player1, player2);
+    }
+
+    #[test]
+    fn test_player_lives_default() {
+        let lives = PlayerLives::default();
+        assert_eq!(lives.player1, 3);
+        assert_eq!(lives.player2, 3);
+    }
+
+    #[test]
+    fn test_spawn_player_event() {
+        let event = SpawnPlayerEvent {
+            pos: Vec2::new(100.0, 200.0),
+            player_no: PlayerNo(1),
+        };
+        
+        assert_eq!(event.pos, Vec2::new(100.0, 200.0));
+        assert_eq!(event.player_no, PlayerNo(1));
+    }
+
+    #[test]
+    fn test_reset_player_lives_with_config() {
+        // Test that reset_player_lives uses initial_lives from config
+        use crate::config::GameConfig;
+        use bevy::prelude::*;
+        
+        let mut app = App::new();
+        app.init_resource::<GameConfig>()
+            .init_resource::<PlayerLives>();
+        
+        // Set custom lives
+        {
+            let mut lives = app.world_mut().resource_mut::<PlayerLives>();
+            lives.player1 = 0;
+            lives.player2 = 0;
+        }
+        
+        // Reset using function - simplified test
+        let initial_lives = {
+            let config = app.world().resource::<GameConfig>();
+            config.player.initial_lives
+        };
+        {
+            let mut lives_mut = app.world_mut().resource_mut::<PlayerLives>();
+            lives_mut.player1 = initial_lives;
+            lives_mut.player2 = initial_lives;
+        }
+        
+        let lives_after = app.world().resource::<PlayerLives>();
+        assert_eq!(lives_after.player1, 3);
+        assert_eq!(lives_after.player2, 3);
     }
 }

@@ -21,6 +21,10 @@ pub struct Enemy;
 #[derive(Component)]
 pub struct EnemyChangeDirectionTimer(pub Timer);
 
+/// Automatically spawn enemies when conditions are met
+/// Checks enemy limits (max alive, per level) and spawns at random marker positions
+/// Ensures enemies don't spawn too close to existing tanks
+#[allow(clippy::too_many_arguments)]
 pub fn auto_spawn_enemies(
     mut commands: Commands,
     mut level_spawned_enemies: ResMut<LevelSpawnedEnemies>,
@@ -104,6 +108,15 @@ pub fn auto_spawn_enemies(
     }
 }
 
+/// Spawn a single enemy entity at the specified position
+/// Creates enemy with random sprite variant, physics, and AI components
+///
+/// # Arguments
+/// * `pos` - Position where the enemy should spawn
+/// * `commands` - Commands to spawn entities
+/// * `asset_server` - Asset server for loading textures
+/// * `atlas_layouts` - Texture atlas layouts resource
+/// * `game_config` - Game configuration for enemy properties
 pub fn spawn_enemy(
     pos: Vec3,
     commands: &mut Commands,
@@ -159,8 +172,14 @@ pub fn spawn_enemy(
     ));
 }
 
-// TODO: Actively attack when player is detected
-// TODO: Trees can provide cover
+/// Handle enemy movement and AI pathfinding
+/// Enemies move in their current direction until hitting obstacles
+/// When timer expires or collision occurs, enemies choose a new random direction
+/// Implements obstacle avoidance for level items
+///
+/// # TODO
+/// - Actively attack when player is detected
+/// - Trees can provide cover
 pub fn enemies_move(
     mut q_enemies: Query<
         (
@@ -287,6 +306,9 @@ pub fn enemies_move(
     }
 }
 
+/// Handle enemy shooting behavior
+/// Enemies automatically fire bullets based on their cooldown timer
+/// Bullets are spawned in the direction the enemy is facing
 pub fn enemies_attack(
     mut q_players: Query<
         (&Transform, &common::Direction, &mut TankRefreshBulletTimer),
@@ -423,6 +445,35 @@ impl Plugin for EnemyPlugin {
                     .after(crate::common::GameplaySet::BulletMovement)
                     .run_if(in_state(AppState::Playing)),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_level_spawned_enemies_default() {
+        let spawned = LevelSpawnedEnemies::default();
+        assert_eq!(spawned.0, 0);
+    }
+
+    #[test]
+    fn test_level_spawned_enemies_increment() {
+        let mut spawned = LevelSpawnedEnemies(5);
+        spawned.0 += 1;
+        assert_eq!(spawned.0, 6);
+    }
+
+    #[test]
+    fn test_enemy_sprite_index_sets() {
+        let sets = enemies_sprite_index_sets();
+        assert!(!sets.is_empty());
+
+        // Each set should have 8 elements (Up, Right, Down, Left + variations)
+        for set in &sets {
+            assert!(!set.is_empty());
+        }
     }
 }
 

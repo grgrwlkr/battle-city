@@ -4,7 +4,7 @@ use bevy::prelude::*;
 /// This module contains all configurable game parameters that can be
 /// easily modified or loaded from external files.
 /// Player configuration
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct PlayerConfig {
     /// Player movement speed in pixels per second
     pub speed: f32,
@@ -31,7 +31,7 @@ impl Default for PlayerConfig {
 }
 
 /// Enemy configuration
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct EnemyConfig {
     /// Enemy movement speed in pixels per second
     pub speed: f32,
@@ -61,7 +61,7 @@ impl Default for EnemyConfig {
 }
 
 /// Level configuration
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct LevelConfig {
     /// Number of rows in the level map
     pub rows: i32,
@@ -85,7 +85,7 @@ impl Default for LevelConfig {
 }
 
 /// Bullet configuration
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct BulletConfig {
     /// Bullet movement speed in pixels per second
     pub speed: f32,
@@ -98,7 +98,7 @@ impl Default for BulletConfig {
 }
 
 /// Sprite ordering configuration (z-axis)
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct SpriteOrderConfig {
     /// Game over screen z-order
     pub game_over: f32,
@@ -127,4 +127,74 @@ pub struct GameConfig {
     pub level: LevelConfig,
     pub bullet: BulletConfig,
     pub sprite_order: SpriteOrderConfig,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_player_config_default() {
+        let config = PlayerConfig::default();
+        assert_eq!(config.speed, 150.0);
+        assert_eq!(config.bullet_cooldown, 0.5);
+        assert_eq!(config.initial_lives, 3);
+        assert_eq!(config.tank_size, 28);
+        assert_eq!(config.tank_scale, 0.8);
+    }
+
+    #[test]
+    fn test_enemy_config_default() {
+        let config = EnemyConfig::default();
+        assert_eq!(config.speed, 100.0);
+        assert_eq!(config.bullet_cooldown, 2.0);
+        assert_eq!(config.max_live_enemies, 5);
+        assert_eq!(config.enemies_per_level, 12);
+        assert_eq!(config.tank_size, 28);
+        assert_eq!(config.tank_scale, 0.8);
+    }
+
+    #[test]
+    fn test_level_config_default() {
+        let config = LevelConfig::default();
+        assert_eq!(config.rows, 18);
+        assert_eq!(config.columns, 27);
+        assert_eq!(config.tile_size, 32.0);
+        assert_eq!(config.max_levels, 2);
+    }
+
+    #[test]
+    fn test_bullet_config_default() {
+        let config = BulletConfig::default();
+        assert_eq!(config.speed, 300.0);
+    }
+
+    #[test]
+    fn test_sprite_order_config_default() {
+        let config = SpriteOrderConfig::default();
+        assert_eq!(config.game_over, 4.0);
+        assert_eq!(config.tree, 3.0);
+        assert_eq!(config.player, 2.0);
+    }
+
+    #[test]
+    fn test_game_config_default() {
+        let config = GameConfig::default();
+        assert_eq!(config.player, PlayerConfig::default());
+        assert_eq!(config.enemy, EnemyConfig::default());
+        assert_eq!(config.level, LevelConfig::default());
+        assert_eq!(config.bullet, BulletConfig::default());
+        assert_eq!(config.sprite_order, SpriteOrderConfig::default());
+    }
+
+    #[test]
+    fn test_game_config_clone() {
+        let config = GameConfig::default();
+        let cloned = config.clone();
+        assert_eq!(config.player, cloned.player);
+        assert_eq!(config.enemy, cloned.enemy);
+        assert_eq!(config.level, cloned.level);
+        assert_eq!(config.bullet, cloned.bullet);
+        assert_eq!(config.sprite_order, cloned.sprite_order);
+    }
 }

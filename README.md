@@ -1,27 +1,57 @@
-[English](README_EN.md)
+# battle-city
 
-# battle-city 坦克大战游戏
-- [x] LDTK软件编辑关卡
-- [x] 关卡载入
-- [x] 关卡切换
-- [x] 玩家定点和敌人随机点出生
-- [x] 利用物理引擎进行碰撞检测
-- [x] 玩家出生、护盾、爆炸、水波等精灵动画
-- [x] 游戏UI
-- [x] 游戏音效
-- [x] 暂停游戏
-- [x] 敌人AI实现
-- [x] 本地多人模式
-- [x] WASM支持
+A classic top-down tank battle game built with Bevy game engine.
 
-在线游玩：[点这里](https://nightswatchgames.github.io/games/battle-city/)（电脑版Chrome/Firefox/Edge打开）
+## Features
 
-## 运行
-1. 本地运行
+- [x] Design levels (Ldtk software)
+- [x] Load levels
+- [x] Switch levels
+- [x] Random resurrection positions
+- [x] Collision detection using physics engine
+- [x] Resurrection, shield, explosion and water etc sprite animations
+- [x] game ui
+- [x] game sounds
+- [x] pause game
+- [x] enemies ai
+- [x] local multiplayer
+- [x] WASM support
+
+## Architecture
+
+The project follows Bevy best practices and clean architecture principles:
+
+- **Modular Plugins**: Each game system is encapsulated in its own plugin
+- **System Sets**: Organized system execution with explicit dependencies
+- **Configuration Resources**: All game parameters are configurable
+- **ECS Architecture**: Entity Component System for game logic
+- **Structured Logging**: Comprehensive logging for debugging
+
+For detailed architecture documentation, see [docs/architecture.md](docs/architecture.md).
+
+## Project Structure
+
+```
+src/
+├── main.rs       # Application entry, plugin registration
+├── common.rs     # Shared types, system sets
+├── config.rs     # Game configuration
+├── player.rs     # Player systems
+├── enemy.rs      # Enemy systems and AI
+├── bullet.rs     # Bullet and collision systems
+├── level.rs      # Level management
+├── ui.rs         # UI and menus
+└── area.rs       # Game boundaries
+```
+
+Play Online: [Click here](https://nightswatchgames.github.io/games/battle-city/) (Open with PC Chrome/Firefox/Edge)
+
+## Get started
+1. Native
 ```
 cargo run
 ```
-2. WASM运行
+2. WASM
 ```
 rustup target install wasm32-unknown-unknown
 cargo install wasm-server-runner
@@ -33,23 +63,26 @@ cargo build --release --target wasm32-unknown-unknown
 wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/battle-city.wasm
 ```
 
-## 游戏展示
-视频演示：[B站](https://www.bilibili.com/video/BV1fx4y1w7RC/)
+## Screenshots
+Game video: [YouTube](https://www.youtube.com/watch?v=54Z2WBFZfzA)
 
 ![start_menu](screenshots/start_menu.png)
 ![game_playing](screenshots/game_playing.png)
 ![game_over](screenshots/game_over.png)
 
-## 参考资料
-- [bevy-cheatbook](https://github.com/bevy-cheatbook/bevy-cheatbook)（[中文翻译](https://yiviv.com/bevy-cheatbook/)）
-- [Unity制作坦克大战](https://www.bilibili.com/video/BV1PW41197Su)
+## References
+- [bevy-cheatbook](https://github.com/bevy-cheatbook/bevy-cheatbook) ([Chinese translation](https://yiviv.com/bevy-cheatbook/))
 - [Battle City - Wikipedia](https://en.wikipedia.org/wiki/Battle_City)
+- [Unity Tank Battle Tutorial](https://www.bilibili.com/video/BV1PW41197Su)
 
-## 问题
-**1.2d游戏角色改变方向时，通常是切换sprite还是进行sprite旋转？**
+## Questions
 
-**2.Sprite Sheet 和 Texture Atlas 理解和区别？**
-Texture Atlas 是指一张大图片（图集）包含多个texture，Sprite Sheet 通常是指一张大图片包含帧动画的每一帧（texture），实质上跟 Texture Atlas 一样。在 Bevy 0.10 中，帧动画（SpriteSheetBundle）也是直接使用 struct TextureAtlas 存储图集，并没有使用单独的 struct SpriteSheet 存储。
+**1. When changing direction in a 2D game, is it better to switch sprites or rotate the sprite?**
+
+**2. Understanding the difference between Sprite Sheet and Texture Atlas:**
+A Texture Atlas is a large image containing multiple textures. A Sprite Sheet usually refers to a large image containing each frame of frame animation (texture), which is essentially the same as a Texture Atlas. In Bevy 0.10, frame animation (SpriteSheetBundle) also directly uses `struct TextureAtlas` to store the atlas, and does not use a separate `struct SpriteSheet`.
+
+References:
 - https://forum.unity.com/threads/sprite-atlas-vs-manual-sprite-sheet.1229424/
 - https://gamedev.stackexchange.com/questions/69895/what-is-the-difference-between-a-sprite-sheet-and-a-texture-atlas
 - https://docs.rs/bevy/latest/bevy/sprite/struct.TextureAtlas.html

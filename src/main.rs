@@ -22,12 +22,13 @@ use bevy_rapier2d::prelude::*;
 const BACKGROUND_COLOR: Color = Color::BLACK;
 
 /// Core plugin for game initialization
+/// Sets up essential resources, messages, and states required by all other plugins
 pub struct CorePlugin;
 
 impl Plugin for CorePlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<HomeDyingEvent>()
-            .add_message::<CollisionEvent>()
+        app.add_message::<level::HomeDyingEvent>()
+            .add_message::<level::CollisionEvent>()
             .init_state::<AppState>()
             .insert_resource(ClearColor(BACKGROUND_COLOR))
             .insert_resource(MultiplayerMode::SinglePlayer)

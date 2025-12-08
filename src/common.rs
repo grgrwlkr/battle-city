@@ -5,90 +5,60 @@ use std::collections::HashSet;
 pub const LEVEL_ROWS: i32 = 18;
 pub const LEVEL_COLUMNS: i32 = 27;
 pub const TILE_SIZE: f32 = 32.0;
-// Number of levels
-pub const MAX_LEVELS: i32 = 2;
-// Maximum number of enemies that can coexist simultaneously
-pub const MAX_LIVE_ENEMIES: i32 = 5;
-// Number of enemies per level
-pub const ENEMIES_PER_LEVEL: i32 = 12;
-// Tank bullet refresh interval (seconds)
-pub const PLAYER_REFRESH_BULLET_INTERVAL: f32 = 0.5;
-pub const ENEMY_REFRESH_BULLET_INTERVAL: f32 = 2.0;
-// Tank speed, size and scale
-pub const PLAYER_SPEED: f32 = 150.0;
-pub const ENEMY_SPEED: f32 = 100.0;
-pub const TANK_SIZE: u32 = 28;
-pub const TANK_SCALE: f32 = 0.8;
 
-// Sprite z-axis ordering
-pub const SPRITE_GAME_OVER_ORDER: f32 = 4.0;
-pub const SPRITE_TREE_ORDER: f32 = 3.0;
-pub const SPRITE_PLAYER_ORDER: f32 = 2.0;
-
+/// Application states for game flow management
 #[derive(Debug, Clone, Eq, PartialEq, Hash, States, Default)]
 pub enum AppState {
     #[default]
+    /// Initial menu screen where players can start the game
     StartMenu,
+    /// Main gameplay state
     Playing,
+    /// Paused state (can be resumed)
     Paused,
+    /// Game over state
     GameOver,
 }
 
+/// Multiplayer mode configuration
 #[derive(Resource, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MultiplayerMode {
+    /// Single player mode
     SinglePlayer,
+    /// Two players mode
     TwoPlayers,
 }
 
-// Direction
+/// Direction enum for entity movement and orientation
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
+    /// Left direction
     Left,
+    /// Right direction
     Right,
+    /// Up direction
     Up,
+    /// Down direction
     Down,
 }
 
-#[derive(Component, Clone, Default, Debug)]
+/// Animation timer component for sprite sheet animations
+#[derive(Component, Debug, Clone)]
 pub struct AnimationTimer(pub Timer);
 
-#[derive(Component, Clone, Default, Debug)]
+/// Animation indices for sprite sheet animation range
+#[derive(Component, Debug, Clone, Copy)]
 pub struct AnimationIndices {
+    /// First frame index in the animation sequence
     pub first: usize,
+    /// Last frame index in the animation sequence
     pub last: usize,
 }
 
-// Tank bullet refresh timer
-#[derive(Component, Deref, DerefMut)]
+/// Tank refresh bullet timer component
+/// Controls the cooldown between bullet shots
+#[derive(Component, Debug, Deref, DerefMut)]
 pub struct TankRefreshBulletTimer(pub Timer);
-
-#[derive(Default, Message)]
-pub struct HomeDyingEvent;
-
-#[derive(Debug, Resource)]
-pub struct GameSounds {
-    pub mode_switch: Handle<AudioSource>,
-    pub bullet_explosion: Handle<AudioSource>,
-    pub big_explosion: Handle<AudioSource>,
-    pub player_fire: Handle<AudioSource>,
-    pub game_over: Handle<AudioSource>,
-    pub game_pause: Handle<AudioSource>,
-}
-
-pub fn setup_game_sounds(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.insert_resource(GameSounds {
-        mode_switch: asset_server.load("sounds/mode_switch.ogg"),
-        bullet_explosion: asset_server.load("sounds/bullet_explosion.ogg"),
-        big_explosion: asset_server.load("sounds/big_explosion.ogg"),
-        player_fire: asset_server.load("sounds/player_fire.ogg"),
-        game_over: asset_server.load("sounds/game_over.ogg"),
-        game_pause: asset_server.load("sounds/game_pause.ogg"),
-    });
-}
-
-// Resource to deduplicate despawn requests within a frame.
-#[derive(Default, Resource)]
-pub struct ScheduledDespawn(pub HashSet<Entity>);
 
 /// System sets for organizing gameplay systems execution order
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
@@ -134,5 +104,88 @@ pub fn animate_sprite_sheet<T: Component>(
                 };
             }
         }
+    }
+}
+
+/// Resource to deduplicate despawn requests within a frame.
+/// This prevents multiple systems from trying to despawn the same entity
+/// in a single frame, which would cause panics.
+#[derive(Default, Resource)]
+pub struct ScheduledDespawn(pub HashSet<Entity>);
+
+/// Game sounds resource containing all audio handles
+#[derive(Debug, Resource)]
+pub struct GameSounds {
+    /// Mode switch sound
+    pub mode_switch: Handle<AudioSource>,
+    /// Bullet explosion sound
+    pub bullet_explosion: Handle<AudioSource>,
+    /// Big explosion sound
+    pub big_explosion: Handle<AudioSource>,
+    /// Player fire sound
+    pub player_fire: Handle<AudioSource>,
+    /// Game over sound
+    pub game_over: Handle<AudioSource>,
+    /// Game pause sound
+    pub game_pause: Handle<AudioSource>,
+}
+
+/// Setup game sounds resource
+pub fn setup_game_sounds(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.insert_resource(GameSounds {
+        mode_switch: asset_server.load("sounds/mode_switch.ogg"),
+        bullet_explosion: asset_server.load("sounds/bullet_explosion.ogg"),
+        big_explosion: asset_server.load("sounds/big_explosion.ogg"),
+        player_fire: asset_server.load("sounds/player_fire.ogg"),
+        game_over: asset_server.load("sounds/game_over.ogg"),
+        game_pause: asset_server.load("sounds/game_pause.ogg"),
+    });
+}
+
+// Re-exports for convenience
+pub use bevy_ecs_ldtk::LevelSelection;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_default() {
+        let state = AppState::default();
+        assert_eq!(state, AppState::StartMenu);
+    }
+
+    #[test]
+    fn test_app_state_equality() {
+        assert_eq!(AppState::StartMenu, AppState::StartMenu);
+        assert_ne!(AppState::StartMenu, AppState::Playing);
+        assert_ne!(AppState::Playing, AppState::Paused);
+        assert_ne!(AppState::Paused, AppState::GameOver);
+    }
+
+    #[test]
+    fn test_multiplayer_mode() {
+        assert_eq!(MultiplayerMode::SinglePlayer, MultiplayerMode::SinglePlayer);
+        assert_ne!(MultiplayerMode::SinglePlayer, MultiplayerMode::TwoPlayers);
+    }
+
+    #[test]
+    fn test_direction_equality() {
+        assert_eq!(Direction::Up, Direction::Up);
+        assert_ne!(Direction::Up, Direction::Down);
+        assert_ne!(Direction::Left, Direction::Right);
+    }
+
+    #[test]
+    fn test_scheduled_despawn_default() {
+        let despawn = ScheduledDespawn::default();
+        assert!(despawn.0.is_empty());
+    }
+
+    #[test]
+    fn test_animation_indices() {
+        let indices = AnimationIndices { first: 0, last: 3 };
+        assert_eq!(indices.first, 0);
+        assert_eq!(indices.last, 3);
     }
 }

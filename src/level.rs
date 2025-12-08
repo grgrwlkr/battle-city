@@ -1,7 +1,5 @@
 use crate::{
-    common::{
-        AnimationIndices, AnimationTimer, AppState, HomeDyingEvent, TILE_SIZE,
-    },
+    common::{AnimationIndices, AnimationTimer, AppState, TILE_SIZE},
     config::GameConfig,
     enemy::{Enemy, LevelSpawnedEnemies},
     player::PlayerNo,
@@ -10,6 +8,14 @@ use bevy::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
 use bevy_rapier2d::prelude::*;
 
+/// Calculate the translation offset for level positioning
+/// Centers the level map based on configuration dimensions
+///
+/// # Arguments
+/// * `game_config` - Game configuration containing level dimensions
+///
+/// # Returns
+/// Translation offset vector to center the level on screen
 pub fn level_translation_offset(game_config: &GameConfig) -> Vec3 {
     Vec3::new(
         -game_config.level.columns as f32 / 2.0 * game_config.level.tile_size,
@@ -18,30 +24,41 @@ pub fn level_translation_offset(game_config: &GameConfig) -> Vec3 {
     )
 }
 
-// Level map elements
+/// Level map element types
+/// Represents different types of static objects in the game level
 #[derive(Component, Clone, PartialEq, Eq, Debug, Default)]
 pub enum LevelItem {
+    /// No level item (empty space)
     #[default]
     None,
-    // Stone wall
+    /// Stone wall (can be destroyed)
     StoneWall,
-    // Iron wall
+    /// Iron wall (cannot be destroyed)
     IronWall,
-    // Tree
+    /// Tree (decorative, can be passed through)
     Tree,
-    // Water
+    /// Water (decorative)
     Water,
-    // Home/base
+    /// Home base (player must protect)
     Home,
 }
 
-// Level player1 position marker
+// Re-export CollisionEvent from bevy_rapier2d for convenience
+pub use bevy_rapier2d::prelude::CollisionEvent;
+
+/// Event emitted when the home base is being destroyed
+#[derive(Debug, Message, Default)]
+pub struct HomeDyingEvent;
+
+/// Component marking the spawn position for player 1
 #[derive(Component, Default)]
 pub struct Player1Marker;
-// Level player2 position marker
+
+/// Component marking the spawn position for player 2
 #[derive(Component, Default)]
 pub struct Player2Marker;
-// Level enemy position marker
+
+/// Component marking possible spawn positions for enemies
 #[derive(Component, Default)]
 pub struct EnemiesMarker;
 
@@ -51,7 +68,7 @@ pub struct ColliderBundle {
     pub rigid_body: RigidBody,
 }
 
-#[derive(Clone, Debug, Default, Bundle)]
+#[derive(Clone, Debug, Bundle)]
 pub struct AnimationBundle {
     pub timer: AnimationTimer,
     pub indices: AnimationIndices,
@@ -83,7 +100,7 @@ pub struct TreeBundle {
     #[sprite_sheet("textures/map.bmp", 32, 32, 7, 1, 0, 0, 2)]
     sprite_sheet: Sprite,
 }
-#[derive(Bundle, LdtkEntity, Default)]
+#[derive(Bundle, LdtkEntity)]
 pub struct WaterBundle {
     #[from_entity_instance]
     level_item: LevelItem,
@@ -139,7 +156,10 @@ impl From<&EntityInstance> for AnimationBundle {
                 timer: AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
                 indices: AnimationIndices { first: 3, last: 4 },
             },
-            _ => AnimationBundle::default(),
+            _ => AnimationBundle {
+                timer: AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
+                indices: AnimationIndices { first: 0, last: 0 },
+            },
         }
     }
 }
@@ -156,6 +176,9 @@ impl From<&EntityInstance> for LevelItem {
     }
 }
 
+/// Setup and load level from LDTK file
+/// Spawns LDTK world bundle when entering Playing state
+/// Skips reload if level is already loaded (e.g., returning from pause)
 pub fn setup_levels(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -181,6 +204,9 @@ pub fn setup_levels(
     });
 }
 
+/// Spawn entities from LDTK level data
+/// Processes newly added entity instances from LDTK and creates game entities
+/// Currently handles Tree entities with proper positioning and sprites
 pub fn spawn_ldtk_entity(
     mut commands: Commands,
     entity_query: Query<(Entity, &Transform, &EntityInstance), Added<EntityInstance>>,
@@ -251,6 +277,10 @@ pub fn animate_water(
     }
 }
 
+/// Automatically switch to next level when conditions are met
+/// Triggers level transition when all enemies are spawned and destroyed
+/// Handles game victory when max levels are completed
+/// Cleans up entities before transitioning
 #[allow(clippy::too_many_arguments)]
 pub fn auto_switch_level(
     mut commands: Commands,
@@ -376,6 +406,7 @@ impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
         app.register_ldtk_entity::<StoneWallBundle>("StoneWall")
             .register_ldtk_entity::<IronWallBundle>("IronWall")
+            .register_ldtk_entity::<TreeBundle>("Tree")
             .register_ldtk_entity::<WaterBundle>("Water")
             .register_ldtk_entity::<HomeBundle>("Home")
             .register_ldtk_entity::<Player1MarkerBundle>("Player1")
@@ -419,5 +450,47 @@ impl Plugin for LevelPlugin {
                     .in_set(crate::common::GameplaySet::Animation)
                     .run_if(in_state(AppState::GameOver)),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::GameConfig;
+
+    #[test]
+    fn test_level_translation_offset() {
+        let config = GameConfig::default();
+        let offset = level_translation_offset(&config);
+
+        // Expected: -columns/2 * tile_size, -rows/2 * tile_size, 0.0
+        let expected_x = -(config.level.columns as f32 / 2.0) * config.level.tile_size;
+        let expected_y = -(config.level.rows as f32 / 2.0) * config.level.tile_size;
+
+        assert_eq!(offset.x, expected_x);
+        assert_eq!(offset.y, expected_y);
+        assert_eq!(offset.z, 0.0);
+    }
+
+    #[test]
+    fn test_level_item_from_entity_instance() {
+        use bevy_ecs_ldtk::EntityInstance;
+
+        // This would require creating an EntityInstance, which is complex
+        // For now, we test the enum itself
+        assert_eq!(LevelItem::StoneWall, LevelItem::StoneWall);
+        assert_ne!(LevelItem::StoneWall, LevelItem::IronWall);
+        assert_ne!(LevelItem::Tree, LevelItem::Water);
+        assert_eq!(LevelItem::None, LevelItem::default());
+    }
+
+    #[test]
+    fn test_level_item_variants() {
+        assert_eq!(LevelItem::None, LevelItem::default());
+        assert_ne!(LevelItem::StoneWall, LevelItem::default());
+        assert_ne!(LevelItem::IronWall, LevelItem::default());
+        assert_ne!(LevelItem::Tree, LevelItem::default());
+        assert_ne!(LevelItem::Water, LevelItem::default());
+        assert_ne!(LevelItem::Home, LevelItem::default());
     }
 }

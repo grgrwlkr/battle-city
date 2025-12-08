@@ -1,16 +1,23 @@
-use crate::common::{AppState, GameSounds, MultiplayerMode};
+use crate::common::{AppState, MultiplayerMode};
+use crate::common::GameSounds;
 use crate::config::GameConfig;
 use bevy::prelude::*;
 use std::time::Duration;
 
+/// Component marking UI entities on the start menu screen
 #[derive(Component)]
 pub struct OnStartMenuScreen;
+
+/// Component marking the multiplayer mode flag UI element
 #[derive(Component)]
 pub struct OnStartMenuScreenMultiplayerModeFlag;
 
+/// Component marking UI entities on the game over screen
 #[derive(Component)]
 pub struct OnGameOverScreen;
 
+/// Setup the start menu UI
+/// Creates UI elements including title, player preview, and mode selection
 pub fn setup_start_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -66,6 +73,8 @@ pub fn setup_start_menu(
     ));
 }
 
+/// Setup the game over screen UI
+/// Displays game over image and plays game over sound
 pub fn setup_game_over(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -113,6 +122,8 @@ pub fn animate_game_over(
     }
 }
 
+/// Handle start game input from the menu
+/// Transitions to Playing state when Enter or Space is pressed
 pub fn start_game(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut app_state: ResMut<NextState<AppState>>,
@@ -124,6 +135,8 @@ pub fn start_game(
     }
 }
 
+/// Toggle between single player and two player modes
+/// Updates UI indicator and plays sound effect
 pub fn switch_multiplayer_mode(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -150,6 +163,8 @@ pub fn switch_multiplayer_mode(
     }
 }
 
+/// Pause the game when Escape is released
+/// Transitions to Paused state and plays pause sound
 pub fn pause_game(
     mut commands: Commands,
     mut app_state: ResMut<NextState<AppState>>,
@@ -171,6 +186,8 @@ pub fn pause_game(
     }
 }
 
+/// Unpause the game when Escape is released in paused state
+/// Returns to Playing state
 pub fn unpause_game(
     mut app_state: ResMut<NextState<AppState>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,

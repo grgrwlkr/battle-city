@@ -2,37 +2,51 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
 use crate::area::*;
-use crate::common::{AppState, Direction, *};
+use crate::common::{AppState, Direction, GameSounds, *};
 use crate::config::GameConfig;
 use crate::enemy::Enemy;
-use crate::level::LevelItem;
+use crate::level::{CollisionEvent, HomeDyingEvent, LevelItem};
 use crate::player::{PlayerLives, PlayerNo, Shield};
 
 
+/// Bullet type component
+/// Identifies whether a bullet belongs to a player or enemy
 #[derive(Component, PartialEq, Eq, Debug)]
 pub enum Bullet {
+    /// Player bullet
     Player,
+    /// Enemy bullet
     Enemy,
 }
 
+/// Component marking an explosion entity
 #[derive(Debug, Component)]
 pub struct Explosion;
 
+/// Event emitted when an explosion should be spawned
 #[derive(Debug, Message)]
 pub struct ExplosionEvent {
-    pos: Vec3,
-    explosion_type: ExplosionType,
+    /// Position where the explosion should occur
+    pub pos: Vec3,
+    /// Type of explosion to spawn
+    pub explosion_type: ExplosionType,
 }
 
+/// Type of explosion effect
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExplosionType {
+    /// Large explosion (for tanks, home base)
     BigExplosion,
+    /// Small explosion (for bullets hitting walls)
     BulletExplosion,
 }
 
+/// Resource containing explosion texture assets
 #[derive(Debug, Resource)]
 pub struct ExplosionAssets {
+    /// Handles for big explosion animation frames
     pub big_explosion: Vec<Handle<Image>>,
+    /// Handles for bullet explosion animation frames
     pub bullet_explosion: Vec<Handle<Image>>,
 }
 
@@ -57,7 +71,8 @@ pub fn setup_explosion_assets(mut commands: Commands, asset_server: Res<AssetSer
     });
 }
 
-// Bullet movement
+/// Update bullet positions based on their direction and speed
+/// Moves bullets in a straight line until they hit something or leave the map
 pub fn move_bullet(
     mut q_bullet: Query<(&mut Transform, &Direction), With<Bullet>>,
     time: Res<Time>,
@@ -74,6 +89,15 @@ pub fn move_bullet(
     }
 }
 
+/// Handle bullet collision events
+/// Processes collisions between bullets and other entities (walls, tanks, base)
+/// Triggers appropriate responses: destroy wall, damage tank, game over, etc.
+/// 
+/// # Collision Types Handled
+/// - Bullet vs Level Items (walls, home)
+/// - Bullet vs Area Walls (boundaries)
+/// - Player Bullet vs Enemy
+/// - Enemy Bullet vs Player (with shield protection)
 #[allow(clippy::too_many_arguments)]
 pub fn handle_bullet_collision(
     mut commands: Commands,
@@ -355,6 +379,9 @@ pub fn spawn_bullet(
     ));
 }
 
+/// Spawn explosion entities based on explosion events
+/// Creates animated explosion sprites at specified positions
+/// Plays appropriate sound effects based on explosion type
 pub fn spawn_explosion(
     mut commands: Commands,
     mut explosion_er: MessageReader<ExplosionEvent>,
@@ -568,5 +595,35 @@ impl Plugin for BulletPlugin {
                     .in_set(crate::common::GameplaySet::Animation)
                     .run_if(in_state(AppState::GameOver)),
             );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bullet_variants() {
+        assert_eq!(Bullet::Player, Bullet::Player);
+        assert_eq!(Bullet::Enemy, Bullet::Enemy);
+        assert_ne!(Bullet::Player, Bullet::Enemy);
+    }
+
+    #[test]
+    fn test_explosion_type_variants() {
+        assert_eq!(ExplosionType::BigExplosion, ExplosionType::BigExplosion);
+        assert_eq!(ExplosionType::BulletExplosion, ExplosionType::BulletExplosion);
+        assert_ne!(ExplosionType::BigExplosion, ExplosionType::BulletExplosion);
+    }
+
+    #[test]
+    fn test_explosion_event() {
+        let event = ExplosionEvent {
+            pos: Vec3::new(100.0, 200.0, 0.0),
+            explosion_type: ExplosionType::BigExplosion,
+        };
+        
+        assert_eq!(event.pos, Vec3::new(100.0, 200.0, 0.0));
+        assert_eq!(event.explosion_type, ExplosionType::BigExplosion);
     }
 }
