@@ -259,6 +259,16 @@ pub fn spawn_ldtk_entity(
     }
 }
 
+/// Set z-coordinate for all level items to render above tanks
+pub fn set_level_items_z_coordinate(
+    mut query: Query<&mut Transform, (With<LevelItem>, Added<LevelItem>)>,
+    game_config: Res<GameConfig>,
+) {
+    for mut transform in &mut query {
+        transform.translation.z = game_config.sprite_order.tree;
+    }
+}
+
 // Water animation
 pub fn animate_water(
     time: Res<Time>,
@@ -433,7 +443,8 @@ impl Plugin for LevelPlugin {
             .add_systems(OnEnter(AppState::Playing), setup_levels)
             .add_systems(
                 Update,
-                spawn_ldtk_entity
+                (spawn_ldtk_entity, set_level_items_z_coordinate)
+                    .chain()
                     .in_set(crate::common::GameplaySet::Spawning)
                     .run_if(in_state(AppState::Playing)),
             )
