@@ -88,27 +88,76 @@ pub fn move_bullet(
     }
 }
 
-/// Handle bullet collision events
-/// Processes collisions between bullets and other entities (walls, tanks, base)
-/// Triggers appropriate responses: destroy wall, damage tank, game over, etc.
-///
-/// # Collision Types Handled
-/// - Bullet vs Level Items (walls, home)
-/// - Bullet vs Area Walls (boundaries)
-/// - Player Bullet vs Enemy
-/// - Enemy Bullet vs Player (with shield protection)
+/// Handle bullet collision with enemies
+/// Processes collisions between player bullets and enemy tanks
 #[allow(clippy::too_many_arguments)]
-pub fn handle_bullet_collision(
+pub fn handle_bullet_enemy_collision(
     mut commands: Commands,
     q_bullets: Query<(Entity, &Bullet, &Transform)>,
-    q_level_items: Query<(&LevelItem, &GlobalTransform, &mut Sprite)>,
-    q_area_wall: Query<(), With<AreaWall>>,
-    q_players: Query<(Entity, &PlayerNo, &Transform, &Children), With<PlayerNo>>,
-    q_shields: Query<Entity, With<Shield>>,
     q_enemies: Query<&Transform, With<Enemy>>,
     mut collision_er: MessageReader<CollisionEvent>,
     mut explosion_ew: MessageWriter<ExplosionEvent>,
-    mut home_dying_ew: MessageWriter<HomeDyingEvent>,
+    mut scheduled: ResMut<ScheduledDespawn>,
+) {
+    for event in collision_er.read() {
+        match event {
+            CollisionEvent::Started(entity1, entity2, _flags)
+            | CollisionEvent::Stopped(entity1, entity2, _flags) => {
+                let bullet_entity = if q_bullets.contains(*entity1) {
+                    *entity1
+                } else if q_bullets.contains(*entity2) {
+                    *entity2
+                } else {
+                    continue;
+                };
+                let other_entity = if bullet_entity == *entity1 {
+                    *entity2
+                } else {
+                    *entity1
+                };
+
+                let Ok((_, bullet, _)) = q_bullets.get(bullet_entity) else {
+                    continue;
+                };
+
+                // Only process player bullets hitting enemies
+                if *bullet != Bullet::Player || !q_enemies.contains(other_entity) {
+                    continue;
+                }
+
+                let Ok(enemy_transform) = q_enemies.get(other_entity) else {
+                    continue;
+                };
+
+                if scheduled.0.insert(bullet_entity) {
+                    commands.entity(bullet_entity).despawn();
+                }
+                if scheduled.0.insert(other_entity) {
+                    commands.entity(other_entity).despawn();
+                }
+                explosion_ew.write(ExplosionEvent {
+                    pos: Vec3::new(
+                        enemy_transform.translation.x,
+                        enemy_transform.translation.y,
+                        enemy_transform.translation.z,
+                    ),
+                    explosion_type: ExplosionType::BigExplosion,
+                });
+            }
+        }
+    }
+}
+
+/// Handle bullet collision with players
+/// Processes collisions between enemy bullets and player tanks (with shield protection)
+#[allow(clippy::too_many_arguments)]
+pub fn handle_bullet_player_collision(
+    mut commands: Commands,
+    q_bullets: Query<(Entity, &Bullet, &Transform)>,
+    q_players: Query<(Entity, &PlayerNo, &Transform, &Children), With<PlayerNo>>,
+    q_shields: Query<Entity, With<Shield>>,
+    mut collision_er: MessageReader<CollisionEvent>,
+    mut explosion_ew: MessageWriter<ExplosionEvent>,
     mut player_lives: ResMut<PlayerLives>,
     multiplayer_mode: Res<MultiplayerMode>,
     mut app_state: ResMut<NextState<AppState>>,
@@ -131,10 +180,125 @@ pub fn handle_bullet_collision(
                     *entity1
                 };
 
-                let Ok((_, bullet, bullet_transform)) = q_bullets.get(bullet_entity) else {
+                let Ok((_, bullet, _)) = q_bullets.get(bullet_entity) else {
                     continue;
                 };
-                // Other object
+
+                // Only process enemy bullets
+                if *bullet != Bullet::Enemy {
+                    continue;
+                }
+
+                // Find player that was hit (either directly or through shield child)
+                if let Some((player_entity, player_no, player_transform, player_children)) =
+                    q_players.iter().find_map(
+                        |(player_entity, player_no, player_transform, player_children)| {
+                            // Check if bullet hit player directly or through shield (child entity)
+                            if player_entity == other_entity
+                                || player_children.contains(&other_entity)
+                            {
+                                Some((player_entity, player_no, player_transform, player_children))
+                            } else {
+                                None
+                            }
+                        },
+                    )
+                {
+                    let mut player_has_shield = false;
+                    for child in player_children.iter() {
+                        if q_shields.contains(child) {
+                            player_has_shield = true;
+                            break;
+                        }
+                    }
+
+                    if scheduled.0.insert(bullet_entity) {
+                        commands.entity(bullet_entity).despawn();
+                    }
+
+                    if player_has_shield {
+                        explosion_ew.write(ExplosionEvent {
+                            pos: Vec3::new(
+                                player_transform.translation.x,
+                                player_transform.translation.y,
+                                player_transform.translation.z,
+                            ),
+                            explosion_type: ExplosionType::BulletExplosion,
+                        });
+                    } else {
+                        // Decrease player lives
+                        if player_no.0 == 1 {
+                            player_lives.player1 -= 1;
+                        } else if player_no.0 == 2 {
+                            player_lives.player2 -= 1;
+                        }
+                        warn!(
+                            "Enemy bullet hit player {} at position ({:.1}, {:.1}), destroying player. Lives remaining: P1={}, P2={}",
+                            player_no.0,
+                            player_transform.translation.x, player_transform.translation.y,
+                            player_lives.player1, player_lives.player2
+                        );
+                        if scheduled.0.insert(player_entity) {
+                            commands.entity(player_entity).despawn();
+                        }
+                        explosion_ew.write(ExplosionEvent {
+                            pos: Vec3::new(
+                                player_transform.translation.x,
+                                player_transform.translation.y,
+                                player_transform.translation.z,
+                            ),
+                            explosion_type: ExplosionType::BigExplosion,
+                        });
+                        if player_lives.player1 <= 0 && player_lives.player2 <= 0 {
+                            app_state.set(AppState::GameOver);
+                        }
+                        if player_lives.player1 <= 0
+                            && *multiplayer_mode == MultiplayerMode::SinglePlayer
+                        {
+                            app_state.set(AppState::GameOver);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Handle bullet collision with other objects (walls, base, boundaries)
+/// Processes collisions between bullets and level items or area walls
+#[allow(clippy::too_many_arguments)]
+pub fn handle_bullet_other_collision(
+    mut commands: Commands,
+    q_bullets: Query<(Entity, &Bullet, &Transform)>,
+    q_level_items: Query<(&LevelItem, &GlobalTransform, &mut Sprite)>,
+    q_area_wall: Query<(), With<AreaWall>>,
+    mut collision_er: MessageReader<CollisionEvent>,
+    mut explosion_ew: MessageWriter<ExplosionEvent>,
+    mut home_dying_ew: MessageWriter<HomeDyingEvent>,
+    mut scheduled: ResMut<ScheduledDespawn>,
+) {
+    for event in collision_er.read() {
+        match event {
+            CollisionEvent::Started(entity1, entity2, _flags)
+            | CollisionEvent::Stopped(entity1, entity2, _flags) => {
+                let bullet_entity = if q_bullets.contains(*entity1) {
+                    *entity1
+                } else if q_bullets.contains(*entity2) {
+                    *entity2
+                } else {
+                    continue;
+                };
+                let other_entity = if bullet_entity == *entity1 {
+                    *entity2
+                } else {
+                    *entity1
+                };
+
+                let Ok((_, _bullet, bullet_transform)) = q_bullets.get(bullet_entity) else {
+                    continue;
+                };
+
+                // Handle level items
                 if q_level_items.contains(other_entity) {
                     let Ok((level_item, level_item_transform, _)) = q_level_items.get(other_entity)
                     else {
@@ -142,7 +306,6 @@ pub fn handle_bullet_collision(
                     };
                     match level_item {
                         LevelItem::Home => {
-                            // Game Over
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -203,6 +366,7 @@ pub fn handle_bullet_collision(
                     }
                 }
 
+                // Handle area walls
                 if q_area_wall.contains(other_entity) {
                     if scheduled.0.insert(bullet_entity) {
                         commands.entity(bullet_entity).despawn();
@@ -215,109 +379,6 @@ pub fn handle_bullet_collision(
                         ),
                         explosion_type: ExplosionType::BulletExplosion,
                     });
-                }
-
-                if *bullet == Bullet::Player && q_enemies.contains(other_entity) {
-                    let Ok(enemy_transform) = q_enemies.get(other_entity) else {
-                        continue;
-                    };
-                    if scheduled.0.insert(bullet_entity) {
-                        commands.entity(bullet_entity).despawn();
-                    }
-                    if scheduled.0.insert(other_entity) {
-                        commands.entity(other_entity).despawn();
-                    }
-                    explosion_ew.write(ExplosionEvent {
-                        pos: Vec3::new(
-                            enemy_transform.translation.x,
-                            enemy_transform.translation.y,
-                            enemy_transform.translation.z,
-                        ),
-                        explosion_type: ExplosionType::BigExplosion,
-                    });
-                }
-
-                // Check if enemy bullet hit player (directly or through shield)
-                if *bullet == Bullet::Enemy {
-                    // Find player that was hit (either directly or through shield child)
-                    if let Some((player_entity, player_no, player_transform, player_children)) =
-                        q_players.iter().find_map(
-                            |(player_entity, player_no, player_transform, player_children)| {
-                                // Check if bullet hit player directly or through shield (child entity)
-                                if player_entity == other_entity
-                                    || player_children.contains(&other_entity)
-                                {
-                                    warn!("SOME");
-                                    Some((
-                                        player_entity,
-                                        player_no,
-                                        player_transform,
-                                        player_children,
-                                    ))
-                                } else {
-                                    warn!("NONE");
-                                    None
-                                }
-                            },
-                        )
-                    {
-                        let mut player_has_shield = false;
-                        for child in player_children.iter() {
-                            if q_shields.contains(child) {
-                                player_has_shield = true;
-                                break;
-                            }
-                        }
-
-                        if scheduled.0.insert(bullet_entity) {
-                            commands.entity(bullet_entity).despawn();
-                        }
-
-                        if player_has_shield {
-                            explosion_ew.write(ExplosionEvent {
-                                pos: Vec3::new(
-                                    player_transform.translation.x,
-                                    player_transform.translation.y,
-                                    player_transform.translation.z,
-                                ),
-                                explosion_type: ExplosionType::BulletExplosion,
-                            });
-                        } else {
-                            // Decrease player lives
-                            if player_no.0 == 1 {
-                                player_lives.player1 -= 1;
-                            } else if player_no.0 == 2 {
-                                player_lives.player2 -= 1;
-                            }
-                            warn!(
-                                "Enemy bullet hit player {} at position ({:.1}, {:.1}), destroying player. Lives remaining: P1={}, P2={}",
-                                player_no.0,
-                                player_transform.translation.x, player_transform.translation.y,
-                                player_lives.player1, player_lives.player2
-                            );
-                            if scheduled.0.insert(player_entity) {
-                                commands.entity(player_entity).despawn();
-                            }
-                            explosion_ew.write(ExplosionEvent {
-                                pos: Vec3::new(
-                                    player_transform.translation.x,
-                                    player_transform.translation.y,
-                                    player_transform.translation.z,
-                                ),
-                                explosion_type: ExplosionType::BigExplosion,
-                            });
-                            if player_lives.player1 <= 0 && player_lives.player2 <= 0 {
-                                app_state.set(AppState::GameOver);
-                            }
-                            if player_lives.player1 <= 0
-                                && *multiplayer_mode == MultiplayerMode::SinglePlayer
-                            {
-                                app_state.set(AppState::GameOver);
-                            }
-                        }
-                        // Skip other collision checks for this bullet
-                        continue;
-                    }
                 }
             }
         }
@@ -513,7 +574,12 @@ impl Plugin for BulletPlugin {
             )
             .add_systems(
                 Update,
-                handle_bullet_collision
+                (
+                    handle_bullet_enemy_collision,
+                    handle_bullet_player_collision,
+                    handle_bullet_other_collision,
+                )
+                    .chain()
                     .in_set(crate::common::GameplaySet::Collision)
                     .after(crate::common::GameplaySet::BulletMovement)
                     .run_if(in_state(AppState::Playing)),
