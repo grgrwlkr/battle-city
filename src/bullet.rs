@@ -103,13 +103,13 @@ pub fn handle_bullet_collision(
     q_bullets: Query<(Entity, &Bullet, &Transform)>,
     q_level_items: Query<(&LevelItem, &GlobalTransform, &mut Sprite)>,
     q_area_wall: Query<(), With<AreaWall>>,
-    q_players: Query<(&Transform, &Children), With<PlayerNo>>,
+    q_players: Query<(Entity, &PlayerNo, &Transform, &Children), With<PlayerNo>>,
     q_shields: Query<Entity, With<Shield>>,
     q_enemies: Query<&Transform, With<Enemy>>,
     mut collision_er: MessageReader<CollisionEvent>,
     mut explosion_ew: MessageWriter<ExplosionEvent>,
     mut home_dying_ew: MessageWriter<HomeDyingEvent>,
-    player_lives: Res<PlayerLives>,
+    mut player_lives: ResMut<PlayerLives>,
     multiplayer_mode: Res<MultiplayerMode>,
     mut app_state: ResMut<NextState<AppState>>,
     mut scheduled: ResMut<ScheduledDespawn>,
@@ -131,50 +131,18 @@ pub fn handle_bullet_collision(
                     *entity1
                 };
 
-                debug!(
-                    "Bullet collision: bullet={:?}, entity1={:?}, entity2={:?}",
-                    bullet_entity, entity1, entity2
-                );
-
                 let Ok((_, bullet, bullet_transform)) = q_bullets.get(bullet_entity) else {
-                    warn!(
-                        "Bullet entity {:?} not found in query, skipping collision",
-                        bullet_entity
-                    );
                     continue;
                 };
-
-                info!(
-                    "{:?} bullet hit entity {:?} at position ({:.1}, {:.1})",
-                    bullet,
-                    other_entity,
-                    bullet_transform.translation.x,
-                    bullet_transform.translation.y
-                );
                 // Other object
                 if q_level_items.contains(other_entity) {
                     let Ok((level_item, level_item_transform, _)) = q_level_items.get(other_entity)
                     else {
-                        warn!(
-                            "Level item entity {:?} not found in query, skipping",
-                            other_entity
-                        );
                         continue;
                     };
-                    info!(
-                        "Bullet hit level item: {:?} at position ({:.1}, {:.1})",
-                        level_item,
-                        level_item_transform.translation().x,
-                        level_item_transform.translation().y
-                    );
                     match level_item {
                         LevelItem::Home => {
                             // Game Over
-                            error!(
-                                "Game over: Home destroyed by bullet at position ({:.1}, {:.1})",
-                                level_item_transform.translation().x,
-                                level_item_transform.translation().y
-                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -189,10 +157,6 @@ pub fn handle_bullet_collision(
                             home_dying_ew.write_default();
                         }
                         LevelItem::StoneWall => {
-                            info!(
-                                "Stone wall destroyed at position ({:.1}, {:.1})",
-                                bullet_transform.translation.x, bullet_transform.translation.y
-                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -210,10 +174,6 @@ pub fn handle_bullet_collision(
                         }
                         LevelItem::Tree => {
                             // Trees provide cover - bullets stop when hitting trees
-                            debug!(
-                                "Bullet stopped by tree (cover) at position ({:.1}, {:.1})",
-                                bullet_transform.translation.x, bullet_transform.translation.y
-                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -227,10 +187,6 @@ pub fn handle_bullet_collision(
                             });
                         }
                         LevelItem::IronWall => {
-                            debug!(
-                                "Bullet bounced off iron wall at position ({:.1}, {:.1})",
-                                bullet_transform.translation.x, bullet_transform.translation.y
-                            );
                             if scheduled.0.insert(bullet_entity) {
                                 commands.entity(bullet_entity).despawn();
                             }
@@ -248,8 +204,6 @@ pub fn handle_bullet_collision(
                 }
 
                 if q_area_wall.contains(other_entity) {
-                    debug!("Bullet hit area boundary wall at position ({:.1}, {:.1}), destroying bullet", 
-                           bullet_transform.translation.x, bullet_transform.translation.y);
                     if scheduled.0.insert(bullet_entity) {
                         commands.entity(bullet_entity).despawn();
                     }
@@ -265,16 +219,8 @@ pub fn handle_bullet_collision(
 
                 if *bullet == Bullet::Player && q_enemies.contains(other_entity) {
                     let Ok(enemy_transform) = q_enemies.get(other_entity) else {
-                        warn!(
-                            "Enemy entity {:?} not found in query, skipping",
-                            other_entity
-                        );
                         continue;
                     };
-                    info!(
-                        "Player bullet destroyed enemy at position ({:.1}, {:.1})",
-                        enemy_transform.translation.x, enemy_transform.translation.y
-                    );
                     if scheduled.0.insert(bullet_entity) {
                         commands.entity(bullet_entity).despawn();
                     }
@@ -291,67 +237,86 @@ pub fn handle_bullet_collision(
                     });
                 }
 
-                if *bullet == Bullet::Enemy && q_players.contains(other_entity) {
-                    let Ok((player_transform, player_children)) = q_players.get(other_entity)
-                    else {
-                        warn!(
-                            "Player entity {:?} not found in query, skipping",
-                            other_entity
-                        );
+                // Check if enemy bullet hit player (directly or through shield)
+                if *bullet == Bullet::Enemy {
+                    // Find player that was hit (either directly or through shield child)
+                    if let Some((player_entity, player_no, player_transform, player_children)) =
+                        q_players.iter().find_map(
+                            |(player_entity, player_no, player_transform, player_children)| {
+                                // Check if bullet hit player directly or through shield (child entity)
+                                if player_entity == other_entity
+                                    || player_children.contains(&other_entity)
+                                {
+                                    warn!("SOME");
+                                    Some((
+                                        player_entity,
+                                        player_no,
+                                        player_transform,
+                                        player_children,
+                                    ))
+                                } else {
+                                    warn!("NONE");
+                                    None
+                                }
+                            },
+                        )
+                    {
+                        let mut player_has_shield = false;
+                        for child in player_children.iter() {
+                            if q_shields.contains(child) {
+                                player_has_shield = true;
+                                break;
+                            }
+                        }
+
+                        if scheduled.0.insert(bullet_entity) {
+                            commands.entity(bullet_entity).despawn();
+                        }
+
+                        if player_has_shield {
+                            explosion_ew.write(ExplosionEvent {
+                                pos: Vec3::new(
+                                    player_transform.translation.x,
+                                    player_transform.translation.y,
+                                    player_transform.translation.z,
+                                ),
+                                explosion_type: ExplosionType::BulletExplosion,
+                            });
+                        } else {
+                            // Decrease player lives
+                            if player_no.0 == 1 {
+                                player_lives.player1 -= 1;
+                            } else if player_no.0 == 2 {
+                                player_lives.player2 -= 1;
+                            }
+                            warn!(
+                                "Enemy bullet hit player {} at position ({:.1}, {:.1}), destroying player. Lives remaining: P1={}, P2={}",
+                                player_no.0,
+                                player_transform.translation.x, player_transform.translation.y,
+                                player_lives.player1, player_lives.player2
+                            );
+                            if scheduled.0.insert(player_entity) {
+                                commands.entity(player_entity).despawn();
+                            }
+                            explosion_ew.write(ExplosionEvent {
+                                pos: Vec3::new(
+                                    player_transform.translation.x,
+                                    player_transform.translation.y,
+                                    player_transform.translation.z,
+                                ),
+                                explosion_type: ExplosionType::BigExplosion,
+                            });
+                            if player_lives.player1 <= 0 && player_lives.player2 <= 0 {
+                                app_state.set(AppState::GameOver);
+                            }
+                            if player_lives.player1 <= 0
+                                && *multiplayer_mode == MultiplayerMode::SinglePlayer
+                            {
+                                app_state.set(AppState::GameOver);
+                            }
+                        }
+                        // Skip other collision checks for this bullet
                         continue;
-                    };
-                    let mut player_has_shield = false;
-                    for child in player_children.iter() {
-                        if q_shields.contains(child) {
-                            player_has_shield = true;
-                            break;
-                        }
-                    }
-
-                    if scheduled.0.insert(bullet_entity) {
-                        commands.entity(bullet_entity).despawn();
-                    }
-
-                    if player_has_shield {
-                        info!(
-                            "Enemy bullet blocked by player shield at position ({:.1}, {:.1})",
-                            player_transform.translation.x, player_transform.translation.y
-                        );
-                        explosion_ew.write(ExplosionEvent {
-                            pos: Vec3::new(
-                                player_transform.translation.x,
-                                player_transform.translation.y,
-                                player_transform.translation.z,
-                            ),
-                            explosion_type: ExplosionType::BulletExplosion,
-                        });
-                    } else {
-                        warn!(
-                            "Enemy bullet hit player at position ({:.1}, {:.1}), destroying player. Lives remaining: P1={}, P2={}",
-                            player_transform.translation.x, player_transform.translation.y,
-                            player_lives.player1, player_lives.player2
-                        );
-                        if scheduled.0.insert(other_entity) {
-                            commands.entity(other_entity).despawn();
-                        }
-                        explosion_ew.write(ExplosionEvent {
-                            pos: Vec3::new(
-                                player_transform.translation.x,
-                                player_transform.translation.y,
-                                player_transform.translation.z,
-                            ),
-                            explosion_type: ExplosionType::BigExplosion,
-                        });
-                        if player_lives.player1 <= 0 && player_lives.player2 <= 0 {
-                            error!("Game over: All players have no lives remaining");
-                            app_state.set(AppState::GameOver);
-                        }
-                        if player_lives.player1 <= 0
-                            && *multiplayer_mode == MultiplayerMode::SinglePlayer
-                        {
-                            error!("Game over: Single player has no lives remaining");
-                            app_state.set(AppState::GameOver);
-                        }
                     }
                 }
             }
@@ -403,7 +368,6 @@ pub fn spawn_explosion(
     mut commands: Commands,
     mut explosion_er: MessageReader<ExplosionEvent>,
     explosion_assets: Res<ExplosionAssets>,
-    asset_server: Res<AssetServer>,
     mut textures: ResMut<Assets<Image>>,
     mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     game_sounds: Res<GameSounds>,
@@ -411,18 +375,13 @@ pub fn spawn_explosion(
     let mut big_explosion_texture_atlas_builder = TextureAtlasBuilder::default();
     for handle in &explosion_assets.big_explosion {
         let Some(texture) = textures.get(handle.id()) else {
-            warn!(
-                "{:?} did not resolve to an `Image` asset.",
-                asset_server.get_path(handle.id())
-            );
             continue;
         };
         big_explosion_texture_atlas_builder.add_texture(Some(handle.id()), texture);
     }
     let big_explosion_texture_atlas = match big_explosion_texture_atlas_builder.build() {
         Ok(atlas) => atlas,
-        Err(e) => {
-            error!("Failed to build big explosion texture atlas: {:?}", e);
+        Err(_e) => {
             return;
         }
     };
@@ -432,18 +391,13 @@ pub fn spawn_explosion(
     let mut bullet_explosion_texture_atlas_builder = TextureAtlasBuilder::default();
     for handle in &explosion_assets.bullet_explosion {
         let Some(texture) = textures.get(handle.id()) else {
-            warn!(
-                "{:?} did not resolve to an `Image` asset.",
-                asset_server.get_path(handle.id())
-            );
             continue;
         };
         bullet_explosion_texture_atlas_builder.add_texture(Some(handle.id()), texture);
     }
     let bullet_explosion_texture_atlas = match bullet_explosion_texture_atlas_builder.build() {
         Ok(atlas) => atlas,
-        Err(e) => {
-            error!("Failed to build bullet explosion texture atlas: {:?}", e);
+        Err(_e) => {
             return;
         }
     };
@@ -451,13 +405,6 @@ pub fn spawn_explosion(
     let bullet_explosion_texture_handle = textures.add(bullet_explosion_texture_atlas.2);
 
     for explosion in explosion_er.read() {
-        trace!(
-            "Spawning {:?} explosion at position ({:.1}, {:.1}, {:.1})",
-            explosion.explosion_type,
-            explosion.pos.x,
-            explosion.pos.y,
-            explosion.pos.z
-        );
         commands.spawn((
             Explosion,
             Sprite {
@@ -516,10 +463,6 @@ pub fn animate_explosion(
             if let Some(atlas) = &mut sprite.texture_atlas {
                 atlas.index += 1;
                 if atlas.index > indices.last && scheduled.0.insert(entity) {
-                    trace!(
-                        "Explosion animation completed, despawning explosion entity {:?}",
-                        entity
-                    );
                     commands.entity(entity).despawn();
                 }
             }
@@ -532,14 +475,8 @@ pub fn cleanup_bullets(
     q_bullets: Query<Entity, With<Bullet>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
-    // Count bullets efficiently
-    let bullet_count = q_bullets.iter().count();
-    if bullet_count > 0 {
-        debug!("Cleaning up {} bullet entities", bullet_count);
-    }
     for entity in &q_bullets {
         if scheduled.0.insert(entity) {
-            trace!("Despawning bullet entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }
@@ -550,13 +487,8 @@ pub fn cleanup_explosions(
     q_explosions: Query<Entity, With<Explosion>>,
     mut scheduled: ResMut<ScheduledDespawn>,
 ) {
-    let explosion_count = q_explosions.iter().count();
-    if explosion_count > 0 {
-        debug!("Cleaning up {} explosion entities", explosion_count);
-    }
     for entity in &q_explosions {
         if scheduled.0.insert(entity) {
-            trace!("Despawning explosion entity {:?}", entity);
             commands.entity(entity).despawn();
         }
     }
