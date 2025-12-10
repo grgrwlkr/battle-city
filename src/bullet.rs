@@ -154,7 +154,7 @@ pub fn handle_bullet_enemy_collision(
 pub fn handle_bullet_player_collision(
     mut commands: Commands,
     q_bullets: Query<(Entity, &Bullet, &Transform)>,
-    q_players: Query<(Entity, &PlayerNo, &Transform, &Children), With<PlayerNo>>,
+    q_players: Query<(Entity, &PlayerNo, &Transform, Option<&Children>), With<PlayerNo>>,
     q_shields: Query<Entity, With<Shield>>,
     mut collision_er: MessageReader<CollisionEvent>,
     mut explosion_ew: MessageWriter<ExplosionEvent>,
@@ -190,14 +190,21 @@ pub fn handle_bullet_player_collision(
                 }
 
                 // Find player that was hit (either directly or through shield child)
-                if let Some((player_entity, player_no, player_transform, player_children)) =
+                if let Some((player_entity, player_no, player_transform, player_children_opt)) =
                     q_players.iter().find_map(
-                        |(player_entity, player_no, player_transform, player_children)| {
+                        |(player_entity, player_no, player_transform, player_children_opt)| {
                             // Check if bullet hit player directly or through shield (child entity)
-                            if player_entity == other_entity
-                                || player_children.contains(&other_entity)
-                            {
-                                Some((player_entity, player_no, player_transform, player_children))
+                            let is_direct_hit = player_entity == other_entity;
+                            let is_shield_hit = player_children_opt
+                                .map(|children| children.contains(&other_entity))
+                                .unwrap_or(false);
+                            if is_direct_hit || is_shield_hit {
+                                Some((
+                                    player_entity,
+                                    player_no,
+                                    player_transform,
+                                    player_children_opt,
+                                ))
                             } else {
                                 None
                             }
@@ -205,10 +212,12 @@ pub fn handle_bullet_player_collision(
                     )
                 {
                     let mut player_has_shield = false;
-                    for child in player_children.iter() {
-                        if q_shields.contains(child) {
-                            player_has_shield = true;
-                            break;
+                    if let Some(player_children) = player_children_opt {
+                        for child in player_children.iter() {
+                            if q_shields.contains(child) {
+                                player_has_shield = true;
+                                break;
+                            }
                         }
                     }
 

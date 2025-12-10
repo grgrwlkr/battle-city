@@ -263,6 +263,7 @@ pub fn spawn_born(
 
     let born_texture_atlas = TextureAtlasLayout::from_grid(UVec2::new(32, 32), 4, 1, None, None);
     let born_atlas_layout_handle = atlas_layouts.add(born_texture_atlas);
+
     commands.spawn((
         Born,
         player_no,
